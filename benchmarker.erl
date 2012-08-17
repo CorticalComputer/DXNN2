@@ -49,7 +49,7 @@ start(Id)->
 		init_constraints=?INIT_CONSTRAINTS,
 		progress_flag=in_progress,
 		run_index=1,
-		tot_runs=50,
+		tot_runs=100,
 		started={date(),time()},
 		interruptions=[]
 	},

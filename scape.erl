@@ -56,7 +56,7 @@ xor_sim(ExoSelf_PId,{[{Input,CorrectOutput}|XOR],MXOR},ErrAcc) ->
 	sse([],[],SSEAcc)->
 		SSEAcc.
 
--record(pb_state,{cpos=0,cvel=0,p1_angle=3.6*(2*math:pi()/360),p1_vel=0,p2_angle=0,p2_vel=0,time_step=0,goal_steps=90000,fitness_acc=0}).
+-record(pb_state,{cpos=0,cvel=0,p1_angle=3.6*(2*math:pi()/360),p1_vel=0,p2_angle=0,p2_vel=0,time_step=0,goal_steps=100000,fitness_acc=0}).
 pb_sim(ExoSelf_PId)->
 	random:seed(now()),
 	%io:format("Starting pb_sim:~p~n",[self()]),
@@ -65,17 +65,22 @@ pb_sim(ExoSelf_PId)->
 pb_sim(ExoSelf_PId,S)->
 	receive
 		{From_PId,sense, [Parameter]}->%io:format("Sense request received:~p~n",[From_PId]),
+			AngleLimit = 2*math:pi()*(36/360),
+			Scaled_CPosition = functions:scale(S#pb_state.cpos,2.4,-2.4),
+			Scaled_CVel = functions:scale(S#pb_state.cvel,10,-10),
+			Scaled_PAngle1 = functions:scale(S#pb_state.p1_angle,AngleLimit,-AngleLimit),
+			Scaled_PAngle2 = functions:scale(S#pb_state.p2_angle,AngleLimit,-AngleLimit),
 			SenseSignal=case Parameter of
-				cpos -> [S#pb_state.cpos];
-				cvel -> [S#pb_state.cvel];
-				p1_angle -> [S#pb_state.p1_angle];
+				cpos -> [Scaled_CPosition];
+				cvel -> [Scaled_CVel];
+				p1_angle -> [Scaled_PAngle1];
 				p1_vel -> [S#pb_state.p1_vel];
-				p2_angle -> [S#pb_state.p2_angle];
+				p2_angle -> [Scaled_PAngle2];
 				p2_vel -> [S#pb_state.p2_vel];
-				2 -> [S#pb_state.cpos,S#pb_state.p1_angle];
-				3 -> [S#pb_state.cpos,S#pb_state.p1_angle,S#pb_state.p2_angle];
-				4 -> [S#pb_state.cpos,S#pb_state.cvel,S#pb_state.p1_angle,S#pb_state.p1_vel];
-				6 -> [S#pb_state.cpos,S#pb_state.cvel,S#pb_state.p1_angle,S#pb_state.p1_vel,S#pb_state.p2_angle,S#pb_state.p2_vel]
+				2 -> [Scaled_CPosition,Scaled_PAngle1];
+				3 -> [Scaled_CPosition,Scaled_PAngle1,Scaled_PAngle2];
+				4 -> [Scaled_CPosition,Scaled_CVel,Scaled_PAngle1,S#pb_state.p1_vel];
+				6 -> [Scaled_CPosition,Scaled_CVel,Scaled_PAngle1,Scaled_PAngle2,S#pb_state.p1_vel,S#pb_state.p2_vel]
 			end,
 			From_PId ! {self(),percept,SenseSignal},
 			scape:pb_sim(ExoSelf_PId,S);

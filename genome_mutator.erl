@@ -56,7 +56,7 @@ test(Agent_Id,Mutator)->
 mutate(Agent_Id)->
 	random:seed(now()),
 	F = fun()->
-		mutate_SearchParameters(Agent_Id),
+		%mutate_SearchParameters(Agent_Id),
 		A = genotype:read({agent,Agent_Id}),
 		{TTM_Name,Parameter} = A#agent.tot_topological_mutations_f,
 		TotMutations = tot_topological_mutations:TTM_Name(Parameter,Agent_Id),
@@ -765,7 +765,7 @@ outsplice(Agent_Id)->
 	N = genotype:read({neuron,N_Id}),
 	{{LayerIndex,_UId},neuron} = N_Id,
 %Choose a random neuron in the output_ids for splicing, only forward facing.
-	OId_Pool = [{{OL,O_UId},OT} || {{OL,O_UId},OT} <- N#neuron.output_ids],% OL > LayerIndex],
+	OId_Pool = [{{OL,O_UId},OT} || {{OL,O_UId},OT} <- N#neuron.output_ids, OL > LayerIndex],
 	io:format("OIds:~p~nOIdPool:~p~n",[N#neuron.output_ids,OId_Pool]),
 	case OId_Pool of
 		[] ->

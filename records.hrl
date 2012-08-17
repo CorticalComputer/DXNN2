@@ -39,7 +39,7 @@
 	neural_aggr_fs=[dot_product], %[dot_product, mult_product, diff]
 	tuning_selection_fs=[dynamic_random], %[all,all_random, recent,recent_random, lastgen,lastgen_random]
 	tuning_duration_f={wsize_proportional,0.5}, %[{const,20},{nsize_proportional,0.5},{wsize_proportional,0.5}...]
-	annealing_parameters=[1], %[1,0.9]
+	annealing_parameters=[0.5], %[1,0.9]
 	perturbation_ranges=[1], %[0.5,1,2,3...]
 	agent_encoding_types= [neural], %[neural,substrate]
 	heredity_types = [darwinian], %[darwinian,lamarckian]
@@ -47,16 +47,18 @@
 		%{mutate_weights,1},
 		{add_bias,1}, 
 		%{remove_bias,1}, 
-		{mutate_af,1}, 
+%		{mutate_af,1}, 
 		{add_outlink,1}, 
 		{add_inlink,1}, 
 		{add_neuron,1}, 
 		{outsplice,1},
-		{add_sensor,1}, 
-		{add_actuator,1},
-		{mutate_plasticity_parameters,1},
-		{add_cpp,1},
-		{add_cep,1}
+		{add_sensorlink,1},
+		{add_actuatorlink,1}
+%		{add_sensor,1}, 
+%		{add_actuator,1},
+%		{mutate_plasticity_parameters,1},
+%		{add_cpp,1},
+%		{add_cep,1}
 	], %[{mutate_weights,1}, {add_bias,1}, {remove_bias,1}, {mutate_af,1}, {add_outlink,1}, {remove_outLink,1}, {add_inlink,1}, {remove_inlink,1}, {add_sensorlink,1}, {add_actuatorlink,1}, {add_neuron,1}, {remove_neuron,1}, {outsplice,1}, {insplice,1}, {add_sensor,1}, {remove_sensor,1}, {add_actuator,1}, {remove_actuator,1},{mutate_plasticity_parameters,1}]
 	tot_topological_mutations_fs = [{ncount_exponential,0.5}], %[{ncount_exponential,0.5},{ncount_linear,1}]
 	population_evo_alg_f=generational, %[generational, steady_state]

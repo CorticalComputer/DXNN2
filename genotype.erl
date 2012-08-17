@@ -109,7 +109,7 @@ construct_Cortex(Agent_Id,Generation,SpecCon,Encoding_Type,SPlasticity,SLinkform
 %construct_Cortex/3 generates a new Cx_Id, extracts the morphology from the Constraint record passed to it in SpecCon, and then extracts the initial sensors and actuators for that morphology. After the sensors and actuators are extracted, the function calls construct_InitialNeuroLayer/7, which creates a single layer of neurons connected to the specified sensors and actuators, and returns the ids of the created neurons. Finally, the sensors and actuator ids are extracted from the sensors and actuators, and the cortex record is composed and stored to the database.
 
 construct_SeedNN(Cx_Id,Generation,SpecCon,Sensors,Actuators)->
-	TotLayers=random:uniform(1),
+	TotLayers=random:uniform(1),%change this to create random number of layers
 	TotInputVals = lists:sum([S#sensor.vl || S <- Sensors]),
 	TotOutputVals= lists:sum([A#actuator.vl || A <- Actuators]),
 	TotIOVals = TotInputVals + TotOutputVals,
@@ -188,7 +188,7 @@ construct_SeedNN(Cx_Id,Generation,SpecCon,Sensors,Actuators)->
 				create_NeuralWeightsP(_PFName,0,Acc) ->
 					Acc; 
 				create_NeuralWeightsP(PFName,Index,Acc) ->
-					W = random:uniform()-0.5, 
+					W = random:uniform()/2, 
 					create_NeuralWeightsP(PFName,Index-1,[{W,plasticity:PFName(weight_parameters)}|Acc]). 
 %Each neuron record is composed by the construct_Neuron/6 function. The construct_Neuron/6 creates the Input list from the tuples [{Id,Weights}...] using the vector lengths specified in the Input_Specs list. The create_InputIdPs/3 function uses create_NeuralWeightsP/2 to generate a tuple list with random weights in the range of -0.5 to 0.5, and plasticity parameters dependent on the PF function. The activation function that the neuron uses is chosen randomly from the neural_afs list within the constraint record passed to the construct_Neuron/6 function. construct_Neuron uses calculate_ROIds/3 to extract the list of recursive connection ids from the Output_Ids passed to it. Once the neuron record is filled in, it is saved to the database.
 		

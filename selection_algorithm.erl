@@ -54,10 +54,10 @@ competition_WithDiversifier(ProperlySorted_AgentSummaries,NeuralEnergyCost,Popul
 	
 	
 	uniquify(ProperlySorted_DXSummaries,TotSurvivors)->
-	%[DX_Summary|Sorted_DXSummaries] = ProperlySorted_DXSummaries,%lists:sublist(ProperlySorted_DXSummaries,TotSurvivors),
-	[DX_Summary|Sorted_DXSummaries] = lists:sublist(ProperlySorted_DXSummaries,TotSurvivors),
-	{Fitness,TotN,_DX_Id} = DX_Summary,
-	Diversified_DXSummaries = diversify([{Fitness,TotN}],Sorted_DXSummaries,TotSurvivors-1,[DX_Summary]).
+		[DX_Summary|Sorted_DXSummaries] = ProperlySorted_DXSummaries,%lists:sublist(ProperlySorted_DXSummaries,TotSurvivors),
+		%[DX_Summary|Sorted_DXSummaries] = lists:sublist(ProperlySorted_DXSummaries,TotSurvivors),
+		{Fitness,TotN,_DX_Id} = DX_Summary,
+		Diversified_DXSummaries = diversify([{Fitness,TotN}],Sorted_DXSummaries,TotSurvivors-1,[DX_Summary]).
 			
 		diversify(_TopProfiles,_Sorted_DXSummaries,0,Acc)->
 			lists:reverse(Acc);
@@ -74,7 +74,7 @@ competition_WithDiversifier(ProperlySorted_AgentSummaries,NeuralEnergyCost,Popul
 			lists:reverse(Acc).
 			
 			compare_profilesf([{TopFitness,TopTotN}|TopProfiles],{Fitness,TotN})->%Better make Fitnes part of profile
-				case (TopTotN == TotN) and (TopFitness == Fitness) of
+				case (TopTotN == TotN) of% and (TopFitness == Fitness) of
 					true ->
 						false;
 					false ->

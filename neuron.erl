@@ -11,8 +11,8 @@
 -module(neuron).
 -compile(export_all).
 -include("records.hrl").
--define(DELTA_MULTIPLIER,math:pi()*2).
--define(SAT_LIMIT,math:pi()*2).
+-define(SAT_LIMIT,math:pi()).
+-define(OUTPUT_SAT_LIMIT,1).
 -define(RO_SIGNAL,0).
 -record(state,{
 	id,
@@ -74,9 +74,10 @@ loop(S,ExoSelf_PId,[ok],[ok],SIAcc,MIAcc)->
 	%io:format("self:~p~n SIAcc:~p~n MIAcc:~p~n",[self(), SIAcc,MIAcc]),
 	Ordered_SIAcc = lists:reverse(SIAcc),
 	SI_PIdPs = S#state.si_pidps_current,
-	SAggregation_Product = sat(signal_aggregator:AggrF(Ordered_SIAcc,SI_PIdPs),?SAT_LIMIT),
-	SOutput = functions:AF(SAggregation_Product),
-	
+	%SAggregation_Product = signal_aggregator:AggrF(Ordered_SIAcc,SI_PIdPs),
+	%SOutput = sat(functions:AF(SAggregation_Product),?OUTPUT_SAT_LIMIT),%Saturation is done at -1 and 1
+	SOutput = sat(functions:AF(signal_aggregator:AggrF(Ordered_SIAcc,SI_PIdPs)),?OUTPUT_SAT_LIMIT),
+	%io:format("SOutput:~p~n",[SOutput]),
 	Output_PIds = S#state.output_pids,
 	[Output_PId ! {self(),forward,[SOutput]} || Output_PId <- Output_PIds],
 	
@@ -171,12 +172,18 @@ loop(S,ExoSelf_PId,[SI_PId|SI_PIds],[MI_PId|MI_PIds],SIAcc,MIAcc)->
 %The flush_buffer/0 cleans out the element's inbox.
 perturb_IPIdPs(Spread,[])->[];
 perturb_IPIdPs(Spread,Input_PIdPs)->
-	Tot_Weights=lists:sum([length(WeightsP) || {_Input_PId,WeightsP}<-Input_PIdPs]),
-	MP = 1/math:sqrt(Tot_Weights),
+	%Tot_Weights=lists:sum([length(WeightsP) || {_Input_PId,WeightsP}<-Input_PIdPs]),
+	%MP = 1/math:sqrt(Tot_Weights),
+	MP = 1/math:sqrt(length(Input_PIdPs)),
 	perturb_IPIdPs(Spread,MP,Input_PIdPs,[]).
-perturb_IPIdPs(Spread,MP,[{Input_PId,WeightsP}|Input_PIdPs],Acc)->
-	%MP = 1/math:sqrt(length(WeightsP)),
-	U_WeightsP = perturb_weightsP(Spread,MP,WeightsP,[]),
+perturb_IPIdPs(Spread,_MP,[{Input_PId,WeightsP}|Input_PIdPs],Acc)->
+	MP = 1/math:sqrt(length(WeightsP)),
+	U_WeightsP = case random:uniform() < MP of
+		true ->
+			perturb_weightsP(Spread,1/math:sqrt(length(WeightsP)),WeightsP,[]);
+		false ->
+			WeightsP
+	end,
 	perturb_IPIdPs(Spread,MP,Input_PIdPs,[{Input_PId,U_WeightsP}|Acc]);
 perturb_IPIdPs(_Spread,_MP,[],Acc)->
 	lists:reverse(Acc).
