@@ -18,7 +18,7 @@
 	id,
 	cx_pid,
 	af,
-	pf,
+	%pf,
 	aggrf,
 	heredity_type,
 	si_pids=[],
@@ -28,6 +28,9 @@
 	mi_pids=[],
 	mi_pidps_current=[],
 	mi_pidps_backup=[],
+	%pf,
+	pf_current,
+	pf_backup,
 	output_pids=[],
 	ro_pids=[]
 }).
@@ -46,7 +49,8 @@ prep(ExoSelf_PId) ->
 				id=Id,
 				cx_pid=Cx_PId,
 				af=AF,
-				pf=PF,
+				pf_current=PF,
+				pf_backup=PF,
 				aggrf=AggrF,
 				heredity_type = HeredityType,
 				si_pids=SI_PIds,
@@ -64,7 +68,7 @@ prep(ExoSelf_PId) ->
 %When gen/2 is executed, it spawns the neuron element and immediately begins to wait for its initial state message from the exoself. Once the state message arrives, the neuron sends out the default forward signals to any elements in its ro_ids list, if any. Afterwards, prep drops into the neuron's main loop.
 
 loop(S,ExoSelf_PId,[ok],[ok],SIAcc,MIAcc)->
-	PF = S#state.pf,
+	PF = S#state.pf_current,
 	%PreProcessors=S#state.pre_processors,
 	%SignalIntegrator=S#state.signal_integrator,
 	AF = S#state.af,
@@ -87,8 +91,8 @@ loop(S,ExoSelf_PId,[ok],[ok],SIAcc,MIAcc)->
 		_ ->%io:format("MIAcc:~p, S:~p~n",[MIAcc,S]),
 			Ordered_MIAcc = lists:reverse(MIAcc),
 			MI_PIdPs = S#state.mi_pidps_current,
-			MAggregation_Product = sat(signal_aggregator:dot_product(Ordered_MIAcc,MI_PIdPs),?SAT_LIMIT),
-			MOutput = functions:tanh(MAggregation_Product),
+			MAggregation_Product = signal_aggregator:dot_product(Ordered_MIAcc,MI_PIdPs),
+			MOutput = sat(functions:tanh(MAggregation_Product),?SAT_LIMIT),
 			U_SI_PIdPs = plasticity:PFName([MOutput|PFParameters],Ordered_SIAcc,SI_PIdPs,SOutput),
 			%io:format("U_SI_PIdPs:~p~n",[U_SI_PIdPs]),
 			U_S=S#state{
@@ -101,6 +105,7 @@ loop(S,ExoSelf_PId,[ok],[ok],SIAcc,MIAcc)->
 loop(S,ExoSelf_PId,[SI_PId|SI_PIds],[MI_PId|MI_PIds],SIAcc,MIAcc)->
 	receive
 		{SI_PId,forward,Input}->
+			%io:format("Id:~p Input:~p~n",[S#state.id,Input]),
 			loop(S,ExoSelf_PId,SI_PIds,[MI_PId|MI_PIds],[{SI_PId,Input}|SIAcc],MIAcc);
 		{MI_PId,forward,Input}->
 			loop(S,ExoSelf_PId,[SI_PId|SI_PIds],MI_PIds,SIAcc,[{MI_PId,Input}|MIAcc]);
@@ -109,12 +114,14 @@ loop(S,ExoSelf_PId,[SI_PId|SI_PIds],[MI_PId|MI_PIds],SIAcc,MIAcc)->
 				darwinian ->
 					S#state{
 						si_pidps_backup=S#state.si_pidps_bl,
-						mi_pidps_backup=S#state.mi_pidps_current
+						mi_pidps_backup=S#state.mi_pidps_current,
+						pf_backup=S#state.pf_current
 					};
 				lamarckian ->
 					S#state{
 						si_pidps_backup=S#state.si_pidps_current,
-						mi_pidps_backup=S#state.mi_pidps_current
+						mi_pidps_backup=S#state.mi_pidps_current,
+						pf_backup=S#state.pf_current
 					}
 			end,
 			loop(U_S,ExoSelf_PId,[SI_PId|SI_PIds],[MI_PId|MI_PIds],SIAcc,MIAcc);
@@ -122,16 +129,19 @@ loop(S,ExoSelf_PId,[SI_PId|SI_PIds],[MI_PId|MI_PIds],SIAcc,MIAcc)->
 			U_S = S#state{
 				si_pidps_bl=S#state.si_pidps_backup,
 				si_pidps_current=S#state.si_pidps_backup,
-				mi_pidps_current=S#state.mi_pidps_backup
+				mi_pidps_current=S#state.mi_pidps_backup,
+				pf_current=S#state.pf_backup
 			},
 			loop(U_S,ExoSelf_PId,[SI_PId|SI_PIds],[MI_PId|MI_PIds],SIAcc,MIAcc);
 		{ExoSelf_PId,weight_perturb,Spread}->
 			Perturbed_SIPIdPs=perturb_IPIdPs(Spread,S#state.si_pidps_backup),
 			Perturbed_MIPIdPs=perturb_IPIdPs(Spread,S#state.mi_pidps_backup),
+			Perturbed_PF=perturb_PF(Spread,S#state.pf_backup),
 			U_S=S#state{
 				si_pidps_bl=Perturbed_SIPIdPs,
 				si_pidps_current=Perturbed_SIPIdPs,
-				mi_pidps_current=Perturbed_MIPIdPs
+				mi_pidps_current=Perturbed_MIPIdPs,
+				pf_current=Perturbed_PF
 			},
 			loop(U_S,ExoSelf_PId,[SI_PId|SI_PIds],[MI_PId|MI_PIds],SIAcc,MIAcc);
 		{ExoSelf_PId,reset_prep}->
@@ -145,7 +155,7 @@ loop(S,ExoSelf_PId,[SI_PId|SI_PIds],[MI_PId|MI_PIds],SIAcc,MIAcc)->
 			loop(S,ExoSelf_PId,S#state.si_pids,S#state.mi_pids,[],[]);
 		{ExoSelf_PId,get_backup}->
 			NId = S#state.id,
-			ExoSelf_PId ! {self(),NId,S#state.si_pidps_backup,S#state.mi_pidps_backup},
+			ExoSelf_PId ! {self(),NId,S#state.si_pidps_backup,S#state.mi_pidps_backup,S#state.pf_backup},
 			loop(S,ExoSelf_PId,[SI_PId|SI_PIds],[MI_PId|MI_PIds],SIAcc,MIAcc);
 		{ExoSelf_PId,terminate}->
 			%io:format("Neuron:~p is terminating.~n",[self()])
@@ -176,8 +186,8 @@ perturb_IPIdPs(Spread,Input_PIdPs)->
 	%MP = 1/math:sqrt(Tot_Weights),
 	MP = 1/math:sqrt(length(Input_PIdPs)),
 	perturb_IPIdPs(Spread,MP,Input_PIdPs,[]).
-perturb_IPIdPs(Spread,_MP,[{Input_PId,WeightsP}|Input_PIdPs],Acc)->
-	MP = 1/math:sqrt(length(WeightsP)),
+perturb_IPIdPs(Spread,MP,[{Input_PId,WeightsP}|Input_PIdPs],Acc)->
+	%MP = 1/math:sqrt(length(WeightsP)),
 	U_WeightsP = case random:uniform() < MP of
 		true ->
 			perturb_weightsP(Spread,1/math:sqrt(length(WeightsP)),WeightsP,[]);
@@ -213,3 +223,7 @@ perturb_IPIdPs(_Spread,_MP,[],Acc)->
 				true -> Val
 			end.
 %sat/3 function simply ensures that the Val is neither less than min or greater than max.
+
+perturb_PF(Spread,{PFName,PFParameters})->
+	U_PFParameters = [sat(PFParameter+(random:uniform()-0.5)*Spread,-?SAT_LIMIT,?SAT_LIMIT)||PFParameter<-PFParameters],
+	{PFName,PFParameters}.

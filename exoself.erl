@@ -377,18 +377,18 @@ backup_genotype(IdsNPIds,NPIds)->
 	get_backup([NPId|NPIds],Acc)->
 		NPId ! {self(),get_backup},
 		receive
-			{NPId,NId,SWeightTuples,MWeightTuples}->
-				get_backup(NPIds,[{NId,SWeightTuples,MWeightTuples}|Acc])
+			{NPId,NId,SWeightTuples,MWeightTuples,PF}->
+				get_backup(NPIds,[{NId,SWeightTuples,MWeightTuples,PF}|Acc])
 		end;
 	get_backup([],Acc)->
 		Acc.
 %The backup_genotype/2 uses get_backup/2 to contact all the neurons in its NN and request for the neuron's Ids and their Input_IdPs. Once the updated Input_IdPs from all the neurons have been accumulated, they are passed through the update_genotype/2 function to produce updated neurons, and write them to database.
 
-	update_genotype(IdsNPIds,[{N_Id,SI_PIdPs,MI_PIdPs}|WeightPs])->
+	update_genotype(IdsNPIds,[{N_Id,SI_PIdPs,MI_PIdPs,PF}|WeightPs])->
 		N = genotype:dirty_read({neuron,N_Id}),
 		Updated_SI_IdPs = convert_PIdPs2IdPs(IdsNPIds,SI_PIdPs,[]),
 		Updated_MI_IdPs = convert_PIdPs2IdPs(IdsNPIds,MI_PIdPs,[]),
-		U_N = N#neuron{input_idps = Updated_SI_IdPs,input_idps_modulation=Updated_MI_IdPs},
+		U_N = N#neuron{input_idps = Updated_SI_IdPs,input_idps_modulation=Updated_MI_IdPs,pf=PF},
 		genotype:write(U_N),
 		%io:format("N:~p~n U_N:~p~n Genotype:~p~n U_Genotype:~p~n",[N,U_N,Genotype,U_Genotype]),
 		update_genotype(IdsNPIds,WeightPs);

@@ -56,7 +56,7 @@ test(Agent_Id,Mutator)->
 mutate(Agent_Id)->
 	random:seed(now()),
 	F = fun()->
-		%mutate_SearchParameters(Agent_Id),
+		mutate_SearchParameters(Agent_Id),
 		A = genotype:read({agent,Agent_Id}),
 		{TTM_Name,Parameter} = A#agent.tot_topological_mutations_f,
 		TotMutations = tot_topological_mutations:TTM_Name(Parameter,Agent_Id),
@@ -75,7 +75,7 @@ mutate(Agent_Id)->
 %The function mutate/1 first updates the generation of the agent to be mutated, then calculates the number of mutation operators to be applied to it by executing the tot_topological_mutations:TTM_Name/2 function, and then finally runs the apply_Mutators/2 function, which mutates the agent. Once the agent is mutated, the function updates its fingerprint by executing genotype:update_finrgerprint/1.
 
 	mutate_SearchParameters(Agent_Id)->
-		case random:uniform() < 1 of
+		case random:uniform() < ?SEARCH_PARAMTERS_MUTATION_PROBABILITY of
 			true ->
 				TotMutations = random:uniform(length(?ES_MUTATORS)),
 				apply_ESMutators(Agent_Id,TotMutations);
@@ -462,19 +462,28 @@ link_FromNeuronToNeuron(Generation,From_NeuronId,To_NeuronId)->
 		{PFName,_NLParameters}=ToN#neuron.pf,
 		case {lists:keymember(FromId,1,ToSI_IdPs),lists:keymember(FromId,1,ToMI_IdPs)} of
 			{false,false} ->
-				case {PFName == neuromodulation, random:uniform(2)} of
-					{true,2} ->
-						U_ToMI_IdPs = [{FromId, genotype:create_NeuralWeightsP(PFName,FromOVL,[])}|ToMI_IdPs],
-						ToN#neuron{
-							input_idps = U_ToMI_IdPs,
-							generation = Generation
-						};
-					_ ->
+				case ToSI_IdPs of
+					[] ->
 						U_ToSI_IdPs = [{FromId, genotype:create_NeuralWeightsP(PFName,FromOVL,[])}|ToSI_IdPs],
 						ToN#neuron{
 							input_idps = U_ToSI_IdPs,
 							generation = Generation
-						}
+						};
+					_ ->	
+						case {PFName == neuromodulation, random:uniform(2)} of
+							{true,2} ->
+								U_ToMI_IdPs = [{FromId, genotype:create_NeuralWeightsP(PFName,FromOVL,[])}|ToMI_IdPs],
+								ToN#neuron{
+									input_idps_modulation = U_ToMI_IdPs,
+									generation = Generation
+								};
+							_ ->
+								U_ToSI_IdPs = [{FromId, genotype:create_NeuralWeightsP(PFName,FromOVL,[])}|ToSI_IdPs],
+								ToN#neuron{
+									input_idps = U_ToSI_IdPs,
+									generation = Generation
+								}
+						end
 				end;
 			_ ->
 				exit("ERROR:add_NeuronI::[can not add I_Id]: ~p already connected to ~p~n",[FromId,ToN#neuron.id])
@@ -583,7 +592,7 @@ cutlink_FromNeuronToNeuron(Generation,From_NeuronId,To_NeuronId)->
 			Guard2 ->
 				U_ToMI_IdPs = lists:keydelete(FromId,1,ToMI_IdPs),
 				ToN#neuron{
-					input_idps = U_ToMI_IdPs,
+					input_idps_modulation = U_ToMI_IdPs,
 					generation = Generation};
 			true ->
 				exit("ERROR[can not remove I_Id]: ~p not a member of ~p~n",[FromId,ToN#neuron.id])
@@ -690,8 +699,10 @@ add_inlink(Agent_Id)->
 	end,
 	N_Id = lists:nth(random:uniform(length(N_Ids)),N_Ids),
 	N = genotype:read({neuron,N_Id}),
-	{I_Ids,_WeightPLists} = lists:unzip(N#neuron.input_idps),
+	{SI_Ids,_SWeightPLists} = lists:unzip(N#neuron.input_idps),
+	{MI_Ids,_MWeightPLists} = lists:unzip(N#neuron.input_idps_modulation),
 	Inlink_NIdPool = filter_InlinkIdPool(A#agent.constraint,N_Id,N_Ids),
+	I_Ids = lists:append(SI_Ids,MI_Ids),
 	case lists:append(S_Ids,Inlink_NIdPool) -- I_Ids of
 		[] ->
 			exit("********ERROR:add_INLink:: Neuron already connected from all ids");

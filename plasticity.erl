@@ -59,7 +59,7 @@ hebbian_w(_NeuralParameters,IAcc,Input_PIdPs,Output)->
 
 	hebbian_w1([{IPId,Is}|IAcc],[{IPId,WPs}|Input_PIdPs],Output,Acc)->
 		Updated_WPs = hebbrule_w(Is,WPs,Output,[]),
-		hebbian_w1(IAcc,Input_PIdPs,Output,[Updated_WPs|Acc]);
+		hebbian_w1(IAcc,Input_PIdPs,Output,[{IPId,Updated_WPs}|Acc]);
 	hebbian_w1([],[],_Output,Acc)->
 		lists:reverse(Acc);
 	hebbian_w1([],[{bias,WPs}],_Output,Acc)->
@@ -115,7 +115,7 @@ ojas_w({N_Id,mutate})->
 	N#neuron{input_idps = U_InputIdPs};
 ojas_w(neural_parameters)->
 	[];
-ojas_w(synaptic_parameters)->
+ojas_w(weight_parameters)->
 	[(random:uniform()-0.5)].
 %oja/1 function produces the necessary parameter list for the oja's learning rule to operate. The parameter list for oja's learning rule is a list composed of a single parameter H: [H] per synaptic weight. If the learning parameter is positive, then the postsynaptic neuron's synaptic weight increases if the two connected neurons produce output signals of the same sign. If the learning parameter is negative, and the two connected neurons produce output signals of the same sign, then the synaptic weight of the postsynaptic neuron, decreases in magnitude. Otherwise it increases.
 
@@ -131,7 +131,7 @@ ojas_w1([],[{bias,WPs}],_Output,Acc)->
 %ojas_w/4 function operates on each Input_PIdP, calling the ojas_rule_w/4 function which processes each of the complementary Is and WPs lists, producing the Updated_WPs list in return, with the updated/adapted weights based on the oja's learning rule, using each synaptic weight's distinct learning parameter. 
 
 	ojas_rule_w([I|Is],[{W,[H]}|WPs],Output,Acc)->
-		Updated_W = W + H*Output*(I - Output*W),
+		Updated_W = functions:saturation(W + H*Output*(I - Output*W),?SAT_LIMIT),
 		ojas_rule_w(Is,WPs,Output,[{Updated_W,[H]}|Acc]);
 	ojas_rule_w([],[],_Output,Acc)->
 		lists:reverse(Acc).
@@ -148,13 +148,14 @@ ojas({N_Id,mutate})->
 	N#neuron{pf=U_PF};
 ojas(neural_parameters)->
 	[(random:uniform()-0.5)];
-ojas(synaptic_parameters)->
+ojas(weight_parameters)->
 	[].
 %oja/1 function produces the necessary parameter list for the oja's learning rule to operate. The parameter list for oja's learning rule is a list composed of a single parameter H: [H], used by the neuron for all its synaptic weights. If the learning parameter is positive, and the two connected neurons produce output signals of the same sign, then the postsynaptic neuron's synaptic weight increases. Otherwise it decreases.
 
 ojas([_M,H],IAcc,Input_PIdPs,Output)->
 	ojas(H,IAcc,Input_PIdPs,Output,[]).
 ojas(H,[{IPId,Is}|IAcc],[{IPId,WPs}|Input_PIdPs],Output,Acc)->
+	%io:format("ojas:~p~n",[{H,[{IPId,Is}|IAcc],[{IPId,WPs}|Input_PIdPs],Output,Acc}]),
 	Updated_WPs = ojas_rule(H,Is,WPs,Output,[]),
 	ojas(H,IAcc,Input_PIdPs,Output,[{IPId,Updated_WPs}|Acc]);
 ojas(_H,[],[],_Output,Acc)->
@@ -164,8 +165,9 @@ ojas(_H,[],[{bias,WPs}],_Output,Acc)->
 %ojas/5 function operates on each Input_PIdP, calling the ojas_rule/5 function which processes each of the complementary Is and WPs lists, producing the Updated_WPs list in return, with the updated/adapted weights based on the standard oja's learning rule. 
 
 	ojas_rule(H,[I|Is],[{W,[]}|WPs],Output,Acc)->
-		Updated_W = W + H*Output*(I - Output*W),
-		ojas_rule(H,Is,WPs,Output,[{Updated_W,[H]}|Acc]);
+		%io:format("ojas:~p~n",[{H,I,W,Output}]),
+		Updated_W = functions:saturation(W + H*Output*(I - Output*W),?SAT_LIMIT),
+		ojas_rule(H,Is,WPs,Output,[{Updated_W,[]}|Acc]);
 	ojas_rule(_H,[],[],_Output,Acc)->
 		lists:reverse(Acc).
 %ojas_rule/5 updates every synaptic weight using Oja's learning rule.
@@ -186,6 +188,7 @@ self_modulationV1(weight_parameters)->
 	[(random:uniform()-0.5)].
 	
 self_modulationV1([_M,A,B,C,D],IAcc,Input_PIdPs,Output)->
+	%io:format("[_M,A,B,C,D]:~p~n",[[_M,A,B,C,D]]),
 	H = math:tanh(dot_productV1(IAcc,Input_PIdPs)),
 	neuromodulation([H,A,B,C,D],IAcc,Input_PIdPs,Output,[]).
 	
@@ -205,6 +208,7 @@ self_modulationV1([_M,A,B,C,D],IAcc,Input_PIdPs,Output)->
 			Acc.
 	
 neuromodulation([H,A,B,C,D],[{IPId,Is}|IAcc],[{IPId,WPs}|Input_PIdPs],Output,Acc)->
+	%io:format("[H,A,B,C,D]:~p~n",[[H,A,B,C,D]]),
 	Updated_WPs = genheb_rule([H,A,B,C,D],Is,WPs,Output,[]),
 	neuromodulation([H,A,B,C,D],IAcc,Input_PIdPs,Output,[{IPId,Updated_WPs}|Acc]);
 neuromodulation(_NeuralParameters,[],[],_Output,Acc)->
@@ -214,9 +218,10 @@ neuromodulation([H,A,B,C,D],[],[{bias,WPs}],Output,Acc)->
 	lists:reverse([{bias,Updated_WPs}|Acc]).
 
 	genheb_rule([H,A,B,C,D],[I|Is],[{W,Ps}|WPs],Output,Acc)->
+		%io:format("GenHeb[H,A,B,C,D]:~p~n",[[H,A,B,C,D]]),
 		Updated_W = functions:saturation(W + H*(A*I*Output + B*I + C*Output + D),?SAT_LIMIT),
-		genheb_rule(H,Is,WPs,Output,[{Updated_W,Ps}|Acc]);
-	genheb_rule(_H,[],[],_Output,Acc)->
+		genheb_rule([H,A,B,C,D],Is,WPs,Output,[{Updated_W,Ps}|Acc]);
+	genheb_rule(_NeuralLearningParameters,[],[],_Output,Acc)->
 		lists:reverse(Acc).
 %Updated_W(i)= W(i) + H*(A*I(i)*Output + B*I(i) + C*Output + D)
 
@@ -342,7 +347,7 @@ self_modulationV6(weight_parameters)->
 	D = (random:uniform()-0.5),
 	[H,A,B,C,D].
 
-self_modulationV6([_M,B,C,D],IAcc,Input_PIdPs,Output)->
+self_modulationV6([_M],IAcc,Input_PIdPs,Output)->
 	{AccH,AccA,AccB,AccC,AccD} = dot_productV6(IAcc,Input_PIdPs),
 	H = math:tanh(AccH),
 	A = math:tanh(AccA),
@@ -357,7 +362,7 @@ self_modulationV6([_M,B,C,D],IAcc,Input_PIdPs,Output)->
 		{DotH,DotA,DotB,DotC,DotD} = dotV6(Input,WeightsP,0,0,0,0,0),
 		dot_productV6(IAcc,IPIdPs,DotH+AccH,DotA+AccA,DotB+AccB,DotC+AccC,DotD+AccD);
 	dot_productV6([],[{bias,[{_Bias,[H_Bias,A_Bias,B_Bias,C_Bias,D_Bias]}]}],AccH,AccA,AccB,AccC,AccD)->
-		{AccH + H_Bias,AccA+A_Bias,AccB+B_Bias,AccC+C_Bias,AccD+D_Bias};
+		{AccH+H_Bias,AccA+A_Bias,AccB+B_Bias,AccC+C_Bias,AccD+D_Bias};
 	dot_productV6([],[],AccH,AccA,AccB,AccC,AccD)->
 		{AccH,AccA,AccB,AccC,AccD}.
 	
@@ -386,6 +391,7 @@ neuromodulation(weight_parameters)->
 	[].
 	
 neuromodulation([M,H,A,B,C,D],IAcc,Input_PIdPs,Output)->
+	%io:format("Neuromodulation:~p~n",[{M,H,A,B,C,D,IAcc,Input_PIdPs,Output}]),
 	Modulator = scale_dzone(M,0.33,?SAT_LIMIT),
 	neuromodulation([Modulator*H,A,B,C,D],IAcc,Input_PIdPs,Output,[]).
 	
