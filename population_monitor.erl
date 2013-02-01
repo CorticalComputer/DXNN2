@@ -64,7 +64,8 @@ start_link() ->
 	gen_server:start_link(?MODULE, [], []).
     
 start() -> 
-	gen_server:start(?MODULE, [], []).
+	%gen_server:start(?MODULE, [], []).
+	init_population(#state{op_mode = [gt,benchmark]},?INIT_CONSTRAINTS).
 
 stop() ->
 	gen_server:cast(monitor,{stop,normal}).
