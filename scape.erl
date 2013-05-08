@@ -57,7 +57,7 @@ xor_sim(ExoSelf_PId,{[{Input,CorrectOutput}|XOR],MXOR},ErrAcc) ->
 		SSEAcc.
 
 -record(pb_state,{cpos=0,cvel=0,p1_angle=3.6*(2*math:pi()/360),p1_vel=0,p2_angle=0,p2_vel=0,time_step=0,goal_steps=100000,fitness_acc=0}).
-pb_sim(ExoSelf_PId)->
+pb_sim1(ExoSelf_PId)->
 	random:seed(now()),
 	%io:format("Starting pb_sim:~p~n",[self()]),
 	pb_sim(ExoSelf_PId,#pb_state{}).
@@ -178,6 +178,151 @@ sm_DoublePole(F,S,SimStepIndex)->
 		p2_vel=NextPVel2
 	},
 	sm_DoublePole(0,U_S,SimStepIndex-1).
+
+
+
+
+
+
+pb_sim(ExoSelf_PId)->
+	random:seed(now()),
+	pole2_balancing(ExoSelf_PId,void).
+	
+pole2_balancing(ExoSelf_PId,void)->
+	receive
+		{From_PId,sense, [Parameter]}->%io:format("Sense request received:~p~n",[From_PId]),
+		
+			{CPosition,CVel,PAngle1,PVel1,PAngle2,PVel2,TimeStep,GoalTimeSteps,MaxTimeSteps,FitnessAcc}=case get({pole2_balancing,ExoSelf_PId}) of
+				undefined ->
+					{A,B,C} = now(),
+					random:seed(A,B,C),
+					case get(opmode) of
+						_ ->
+							%Angle1 = (random:uniform() - 0.5)*2*(2*math:pi()/360),
+							%Angle2 = (random:uniform() - 0.5)*2*(2*math:pi()/360),
+							Angle1 = 3.6*(2*math:pi()/360),
+							Angle2 = 0,
+							InitState = {0,0,Angle1,0,Angle2,0,1,100000,100000,0},
+							InitState
+					end,
+					put({pole2_balancing,ExoSelf_PId},InitState),
+					InitState;
+				PrevState->
+					PrevState
+			end,
+		%	io:format("~p ~p ~p~n",[{CPosition,CVel,PAngle1,PVel1,PAngle2,PVel2,TimeStep,GoalTimeSteps,MaxTimeSteps,FitnessAcc},Parameter,TimeStep]),
+			Rad2Angle = 2*math:pi()/360,
+			AngleLimit = Rad2Angle*36,
+		%	io:format("PAngle2:~p~n",[PAngle2/(2*math:pi()/360)]),
+			Scaled_CPosition = functions:scale(CPosition,2.4,-2.4),
+			Scaled_CVel = functions:scale(CVel,10,-10),
+			Scaled_PAngle1 = functions:scale(PAngle1,AngleLimit,-AngleLimit),
+			Scaled_PAngle2 = functions:scale(PAngle2,AngleLimit,-AngleLimit),
+			SenseSignal=case Parameter of
+				cpos -> [Scaled_CPosition];
+				cvel -> [Scaled_CVel];
+				pangle1 -> [Scaled_PAngle1];
+				pvel1 -> [PVel1];
+				pangle2 -> [Scaled_PAngle2];
+				pvel2 -> [PVel2];
+				3 -> [Scaled_CPosition,Scaled_PAngle1,Scaled_PAngle2];
+				6 -> [Scaled_CPosition,Scaled_CVel,Scaled_PAngle1,Scaled_PAngle2,PVel1,PVel2]
+			end,
+			From_PId ! {self(),percept,SenseSignal},
+			scape:pole2_balancing(ExoSelf_PId,void);
+		{From_PId,push,[Damping_Flag,DPB_Flag],[F]}->
+			{CPosition,CVel,PAngle1,PVel1,PAngle2,PVel2,TimeStep,GoalTimeSteps,MaxTimeSteps,FitnessAcc} =  get({pole2_balancing,ExoSelf_PId}),
+			AL = 2*math:pi()*(36/360),
+			{NextCPosition,NextCVel,NextPAngle1,NextPVel1,NextPAngle2,NextPVel2}=sm_DoublePole(F*10,CPosition,CVel,PAngle1,PVel1,PAngle2,PVel2,2),
+			case get(opmode) of
+				test ->
+					case whereis(dp_visor) of
+						undefined ->
+							ok;
+						PId ->
+							timer:sleep(100),
+							PId ! {dp_NewState,self(),{NextCPosition,NextCVel,NextPAngle1,NextPVel1,NextPAngle2,NextPVel2,TimeStep,FitnessAcc}}
+						end;
+				_ ->
+					done
+			end,
+			case(NextPAngle1 > AL)or (NextPAngle1 < -AL) or (NextPAngle2 > AL) or (NextPAngle2 < -AL) or (CPosition > 2.4) or (CPosition < -2.4) or (TimeStep >= MaxTimeSteps)of
+				true ->
+					erase({pole2_balancing,ExoSelf_PId}),
+					case TimeStep >= GoalTimeSteps of
+						true ->
+							From_PId ! {self(),0,goal_reached},
+							scape:pole2_balancing(ExoSelf_PId,void);
+						false ->
+							From_PId ! {self(),0,1},
+							scape:pole2_balancing(ExoSelf_PId,void)
+					end;
+				false ->
+					Fitness = case with_damping of
+						without_damping ->
+							1;
+						with_damping ->
+							Fitness1 = TimeStep/1000,
+							Fitness2 = case TimeStep < 100 of
+								true ->
+									0;
+								false ->
+									0.75/(abs(CPosition) +abs(CVel) + abs(PAngle1) + abs(PVel1))
+							end,
+							Fitness1*0.1 + Fitness2*0.9
+					end,		
+					U_FitnessAcc = FitnessAcc+Fitness,
+					NewState = {NextCPosition,NextCVel,NextPAngle1,NextPVel1,NextPAngle2,NextPVel2,TimeStep+1,GoalTimeSteps,MaxTimeSteps,U_FitnessAcc},
+					put({pole2_balancing,ExoSelf_PId},NewState),
+		%			io:format("Fitness:~p TimeStep:~p Parameter:~p ~n",[Fitness,TimeStep,Parameters]),
+		%			io:format("~p~n",[{CPosition,CVel,CAccel,PAngle1,PVel1,PAccel1,PAngle2,PVel2,PAccel2,TimeStep,FitnessAcc}]),
+%					{0,Fitness},
+					From_PId ! {self(),Fitness,0},
+					scape:pole2_balancing(ExoSelf_PId,void)
+			end;
+		{ExoSelf_PId,terminate} ->
+			ok
+	end.	
+
+sm_DoublePole(_F,CPosition,CVel,PAngle1,PVel1,PAngle2,PVel2,0)->
+	{CPosition,CVel,PAngle1,PVel1,PAngle2,PVel2};
+sm_DoublePole(F,CPosition,CVel,PAngle1,PVel1,PAngle2,PVel2,TimeSteps)->
+	X = CPosition, %EdgePositions = [-2.4,2.4],
+	PHalfLength1 = 0.5,
+	PHalfLength2 = 0.05,
+	M = 1, %CartMass
+	PMass1 = 0.1,
+	PMass2 = 0.01,
+	MUc = 0.0005, %CartTrackFrictionCoefficient
+	MUp = 0.000002, %PoleHingeFrictionCoefficient
+	G = -9.81,
+	Delta = 0.01,
+	EM1 = PMass1*(1-(3/4)*math:pow(math:cos(PAngle1),2)),
+	EM2 = PMass2*(1-(3/4)*math:pow(math:cos(PAngle2),2)),
+	EF1 = PMass1*PHalfLength1*math:pow(PVel1,2)*math:sin(PAngle1)+(3/4)*PMass1*math:cos(PAngle1)*(((MUp*PVel1)/(PMass1*PHalfLength1))+G*math:sin(PAngle1)),
+	EF2 = PMass2*PHalfLength2*math:pow(PVel2,2)*math:sin(PAngle2)+(3/4)*PMass2*math:cos(PAngle2)*(((MUp*PVel2)/(PMass1*PHalfLength2))+G*math:sin(PAngle2)),
+	NextCAccel = (F - MUc*functions:sgn(CVel)+EF1+EF2)/(M+EM1+EM2),
+	NextPAccel1 = -(3/(4*PHalfLength1))*((NextCAccel*math:cos(PAngle1))+(G*math:sin(PAngle1))+((MUp*PVel1)/(PMass1*PHalfLength1))),
+	NextPAccel2 = -(3/(4*PHalfLength2))*((NextCAccel*math:cos(PAngle2))+(G*math:sin(PAngle2))+((MUp*PVel2)/(PMass2*PHalfLength2))),
+	
+	NextCVel = CVel+(Delta*NextCAccel),
+	NextCPosition = CPosition+(Delta*CVel),
+	NextPVel1 = PVel1+(Delta*NextPAccel1),
+	NextPAngle1 = PAngle1+(Delta*NextPVel1),
+	NextPVel2 = PVel2+(Delta*NextPAccel2),
+	NextPAngle2 = PAngle2+(Delta*NextPVel2),
+	sm_DoublePole(0,NextCPosition,NextCVel,NextPAngle1,NextPVel1,NextPAngle2,NextPVel2,TimeSteps-1).
+
+
+
+
+
+
+
+
+
+
+
 	
 -record(dtm_sector,{id,description=[],r}).
 -record(dtm_state,{agent_position=[0,0],agent_direction=90,sectors=[],tot_runs=100,run_index=0,switch_event,switched=false,step_index=0,fitness_acc=50}).

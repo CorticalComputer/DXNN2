@@ -125,13 +125,18 @@ predator(sensors)->
 	prey(sensors).
 
 prey(actuators)->
-	Movement = [#actuator{name=differential_drive,type=standard,scape={public,flatland}, vl=2, parameters=[2]}],
+	Movement = [#actuator{name=two_wheels,type=standard,scape={public,flatland},format=no_geo,vl=2,parameters=[2]}],
 	Movement;
 prey(sensors)->
 	Pi = math:pi(),
-	Color_Scanners = [#sensor{name=color_scanner,type=standard,scape={public,flatland},vl=Density, parameters=[Spread,Density,ROffset]} || Spread <-[Pi/2], Density <-[5], ROffset<-[Pi*0/2]],
-	Range_Scanners = [#sensor{name=range_scanner,type=standard,scape={public,flatland},vl=Density, parameters=[Spread,Density,ROffset]} || Spread <-[Pi/2], Density <-[5], ROffset<-[Pi*0/2]],
-	Color_Scanners++Range_Scanners.
+	Distance_Scanners = [#sensor{name=distance_scanner,type=standard,scape={public,flatland},format=no_geo,vl=Density,parameters=[Spread,Density,ROffset]} || 
+		Spread<-[Pi/2],Density<-[5], ROffset<-[Pi*0/2]],
+	Color_Scanners = [#sensor{name=color_scanner,type=standard,scape={public,flatland},format=no_geo,vl=Density,parameters=[Spread,Density,ROffset]} ||
+		Spread <-[Pi/2], Density <-[5], ROffset<-[Pi*0/2]],
+	Energy_Scanners = [#sensor{name=energy_scanner,type=standard,scape={public,flatland},format=no_geo,vl=Density,parameters=[Spread,Density,ROffset]} ||
+		Spread <-[Pi/2], Density <-[5], ROffset<-[Pi*0/2]],
+	Stat_Readers = [#sensor{name=Name,type=standard,scape={public,flatland},format=no_geo,vl=Density,parameters=Param} || {Name,Density,Param} <- [{energy_reader,1,[]}]],
+	Distance_Scanners.
 	
 forex_trader(actuators)->
 	[

@@ -18,9 +18,12 @@
 -include("records.hrl"). 
 %%=========================================== Polis Configuration Options 
 -record(state,{active_mods=[],active_scapes=[]}). 
--record(scape_summary,{address,type,parameters=[]}).
+-record(scape_summary,{address,type,parameters=[],metabolics,physics}).
+
 -define(MODS,[]).
--define(PUBLIC_SCAPES,[]). 
+-define(PUBLIC_SCAPES,[
+	#scape_summary{type=flatland,metabolics=static} %Public Forum
+]). 
 %The MODS list contains the names of the processes, functions, or other databases that also need to be executed and started when we start our neuroevolutionary platform. In the same manner, when we have created a new public scape, we can add a scape_summary tuple with this scape's information to the PUBLIC_SCAPES list, so that it is initialized and started with the system. The state record for the polis has all the elements needed to track the currently active mods and public scapes, which were either present during the startup of the neuroevolutionary platform, or latter added while the polis was already online.
 
 %%=========================================== API 
@@ -145,7 +148,9 @@ stop_supmods([])->
 start_scapes([S|Scapes],Acc)-> 
 	Type = S#scape_summary.type, 
 	Parameters = S#scape_summary.parameters,
-	{ok,PId} = scape:start_link({self(),Type,Parameters}), 
+	Physics = S#scape_summary.physics,
+	Metabolics = S#scape_summary.metabolics,
+	{ok,PId} = Type:start_link({self(),Type,Physics,Metabolics}),
 	start_scapes(Scapes,[S#scape_summary{address=PId}|Acc]); 
 start_scapes([],Acc)-> 
 	lists:reverse(Acc). 

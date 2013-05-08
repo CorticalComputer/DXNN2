@@ -14,6 +14,7 @@
 -include("records.hrl").
 -record(state,{
 	agent_id,
+	morphology,
 	generation,
 	pm_pid,
 	idsNpids,
@@ -23,7 +24,8 @@
 	npids=[],
 	nids=[],
 	apids=[],
-	scape_pids=[],
+	private_scape_pids=[],
+	public_scape_pids=[],
 	highest_fitness=-1,
 	eval_acc=0,
 	cycle_acc=0,
@@ -64,11 +66,11 @@ prep(Agent_Id,PM_PId,OpMode)->
 	SIds = Cx#cortex.sensor_ids,
 	AIds = Cx#cortex.actuator_ids,
 	NIds = Cx#cortex.neuron_ids,
-	ScapePIds = spawn_Scapes(IdsNPIds,SIds,AIds,Agent_Id),
 	spawn_CerebralUnits(IdsNPIds,cortex,[Cx#cortex.id]),
 	spawn_CerebralUnits(IdsNPIds,sensor,SIds),
 	spawn_CerebralUnits(IdsNPIds,actuator,AIds),
 	spawn_CerebralUnits(IdsNPIds,neuron,NIds),
+	{Private_ScapePIds,Public_ScapePIds} = spawn_Scapes(IdsNPIds,SIds,AIds,Agent_Id),
 	case A#agent.encoding_type of
 		substrate ->
 			Substrate_Id=A#agent.substrate_id,
@@ -101,8 +103,10 @@ prep(Agent_Id,PM_PId,OpMode)->
 	{SPIds,NPIds,APIds}=link_Cortex(Cx,IdsNPIds,OpMode),
 	Cx_PId = ets:lookup_element(IdsNPIds,Cx#cortex.id,2),
 	{TuningDurationFunction,Parameter} = A#agent.tuning_duration_f,
+	Morphology = (A#agent.constraint)#constraint.morphology,
 	S = #state{
 		agent_id=Agent_Id,
+		morphology=Morphology,
 		generation=A#agent.generation,
 		pm_pid=PM_PId,
 		idsNpids=IdsNPIds,
@@ -115,7 +119,8 @@ prep(Agent_Id,PM_PId,OpMode)->
 		substrate_pid=Substrate_PId,
 		cpp_pids = CPP_PIds,
 		cep_pids = CEP_PIds,
-		scape_pids=ScapePIds,
+		private_scape_pids=Private_ScapePIds,
+		public_scape_pids=Public_ScapePIds,
 		max_attempts= tuning_duration:TuningDurationFunction(Parameter,NIds,A#agent.generation),
 		tuning_selection_f=A#agent.tuning_selection_f,
 		annealing_parameter=A#agent.annealing_parameter,
@@ -123,7 +128,7 @@ prep(Agent_Id,PM_PId,OpMode)->
 		perturbation_range=A#agent.perturbation_range,
 		opmode=OpMode
 	},
-	%io:format("S:~p~n",[{S,OpMode}]),
+	io:format("S:~p~n",[{S,OpMode}]),
 	loop(S,OpMode).
 %The prep/2 function prepares and sets up the exoself's state before dropping into the main loop. The function first reads the agent and cortex records belonging to the Agent_Id NN based system. The function then reads the sensor, actuator, and neuron ids, then spawns the private scapes using the spawn_Scapes/3 function, spawns the cortex, sensor, actuator, and neuron processes, and then finally links up all these processes together using the link_.../2 processes. Once the phenotype has been generated from the genotype, the exoself drops into its main loop.
 
@@ -164,7 +169,7 @@ loop(S,gt)->
 					A=genotype:dirty_read({agent,S#state.agent_id}),
 					genotype:write(A#agent{fitness=U_HighestFitness}),
 					backup_genotype(S#state.idsNpids,S#state.npids),
-					terminate_phenotype(S#state.cx_pid,S#state.spids,S#state.npids,S#state.apids,S#state.scape_pids,S#state.cpp_pids,S#state.cep_pids,S#state.substrate_pid),
+					terminate_phenotype(S#state.cx_pid,S#state.spids,S#state.npids,S#state.apids,S#state.private_scape_pids,S#state.cpp_pids,S#state.cep_pids,S#state.substrate_pid),
 					case GoalReachedFlag of
 						true ->
 							io:format("Goal reached. Agent:~p terminating. Genotype has been backed up.~n Fitness:~p~n TotEvaluations:~p~n TotCycles:~p~n TimeAcc:~p~n",[self(),U_HighestFitness,U_EvalAcc,U_CycleAcc,U_TimeAcc]),
@@ -176,7 +181,7 @@ loop(S,gt)->
 					gen_server:cast(S#state.pm_pid,{S#state.agent_id,terminated,U_HighestFitness});
 				false -> %Continue training
 					%io:format("exoself state:~p~n",[S]),
-					%enter_PublicScape(S#state.idsNpids,[genotype:dirty_read({sensor,Id})||Id<-S#state.spids],[genotype:dirty_read({actuator,Id})||Id<-S#state.apids],S#state.agent_id),
+					reenter_PublicScape(S#state.public_scape_pids,[genotype:dirty_read({sensor,ets:lookup_element(IdsNPIds,Id,2)})||Id<-S#state.spids],[genotype:dirty_read({actuator,ets:lookup_element(IdsNPIds,Id,2)})||Id<-S#state.apids],S#state.specie_id,S#state.morphology,length(S#state.nids)),
 					TuningSelectionFunction=S#state.tuning_selection_f,
 					PerturbationRange = S#state.perturbation_range,
 					AnnealingParameter = S#state.annealing_parameter,
@@ -201,7 +206,7 @@ loop(S,benchmark)->
 	io:format("In the Benchmark loop~n"),
 	receive
 		{Cx_PId,evaluation_completed,Fitness,Cycles,Time,GoalReachedFlag}->
-			terminate_phenotype(S#state.cx_pid,S#state.spids,S#state.npids,S#state.apids,S#state.scape_pids,S#state.cpp_pids,S#state.cep_pids,S#state.substrate_pid),
+			terminate_phenotype(S#state.cx_pid,S#state.spids,S#state.npids,S#state.apids,S#state.private_scape_pids,S#state.cpp_pids,S#state.cep_pids,S#state.substrate_pid),
 			io:format("Benchmark complete, agent:~p terminating. Fitness:~p~n TotCycles:~p~n TimeAcc:~p Goal:~p~n",[self(),Fitness,Cycles,Time,GoalReachedFlag]),
 			S#state.pm_pid ! {self(),benchmark_complete,S#state.specie_id,Fitness,Cycles,Time}
 	end;
@@ -209,7 +214,7 @@ loop(S,test)->
 	io:format("In the Test loop~n"),
 	receive
 		{Cx_PId,evaluation_completed,Fitness,Cycles,Time,GoalReachedFlag}->
-			terminate_phenotype(S#state.cx_pid,S#state.spids,S#state.npids,S#state.apids,S#state.scape_pids,S#state.cpp_pids,S#state.cep_pids,S#state.substrate_pid),
+			terminate_phenotype(S#state.cx_pid,S#state.spids,S#state.npids,S#state.apids,S#state.private_scape_pids,S#state.cpp_pids,S#state.cep_pids,S#state.substrate_pid),
 			io:format("Test complete, agent:~p terminating. Fitness:~p~n TotCycles:~p~n TimeAcc:~p Goal:~p~n",[self(),Fitness,Cycles,Time,GoalReachedFlag]),
 			%ets:insert(testing,{self(),Fitness})%%TODO
 			S#state.pm_pid ! {self(),test_complete,S#state.specie_id,Fitness,Cycles,Time}
@@ -233,12 +238,13 @@ loop(S,test)->
 		[ets:insert(IdsNPIds,{ScapeName,PId}) || {PId,ScapeName} <- Private_SN_Tuples], 
 		[ets:insert(IdsNPIds,{PId,ScapeName}) || {PId,ScapeName} <-Private_SN_Tuples],
 		[PId ! {self(),ScapeName} || {PId,ScapeName} <- Private_SN_Tuples],
-		%enter_PublicScape(IdsNPIds,Sensor_Ids,Actuator_Ids,Agent_Id),
-		[PId || {PId,_ScapeName} <-Private_SN_Tuples].
+		PublicScapePIds=enter_PublicScape(IdsNPIds,Sensor_Ids,Actuator_Ids,Agent_Id),
+		PrivateScapePIds=[PId || {PId,_ScapeName} <-Private_SN_Tuples],
+		io:format("PublicScapes:~p PrivateScapes:~p~n",[PublicScapePIds,PrivateScapePIds]),
+		{PrivateScapePIds,PublicScapePIds}.
 %The spawn_Scapes/3 function first extracts all the scapes that the sensors and actuators interface with, it then creates a filtered scape list which only holds unique scape records, after which it further only selects those scapes that are private, and spawns them.
 
 		enter_PublicScape(IdsNPIds,Sensor_Ids,Actuator_Ids,Agent_Id)->
-			io:format("SIds:~p AIds:~p~n",[Sensor_Ids,Actuator_Ids]),
 			A = genotype:dirty_read({agent,Agent_Id}),
 			Sensors = [genotype:dirty_read({sensor,Id}) || Id<-Sensor_Ids],
 			Actuators = [genotype:dirty_read({actuator,Id}) || Id<-Actuator_Ids],
@@ -246,15 +252,23 @@ loop(S,test)->
 			Morphology = (A#agent.constraint)#constraint.morphology,
 			Sensor_Scapes = [Sensor#sensor.scape || Sensor<-Sensors], 
 			Actuator_Scapes = [Actuator#actuator.scape || Actuator<-Actuators], 
-			Unique_Scapes = Sensor_Scapes++(Actuator_Scapes--Sensor_Scapes),
-			io:format("Unique_Scapes:~p~n",[Unique_Scapes]),
+			Unique_Scapes = Sensor_Scapes++(Actuator_Scapes--Sensor_Scapes), 
 			Public_SN_Tuples=[{gen_server:call(polis,{get_scape,ScapeName}),ScapeName} || {public,ScapeName}<-Unique_Scapes],
-			[gen_server:call(PId,{enter,Morphology,Agent_Id,Sensors,Actuators,TotNeurons}) || {PId,ScapeName} <- Public_SN_Tuples].
+			[ets:insert(IdsNPIds,{ScapeName,PId}) || {PId,ScapeName} <- Public_SN_Tuples], 
+			[ets:insert(IdsNPIds,{PId,ScapeName}) || {PId,ScapeName} <-Public_SN_Tuples],
+			[gen_server:call(PId,{enter,Morphology,A#agent.specie_id,Sensors,Actuators,TotNeurons,self()}) || {PId,ScapeName} <- Public_SN_Tuples],
+			[PId || {PId,_ScapeName} <-Public_SN_Tuples].
 			
-		reenter_PublicScape([PS_PId|PS_PIds],Sensors,Actuators,Agent_Id,Morphology,TotNeurons)->
-			gen_server:call(PS_PId,{enter,Morphology,Agent_Id,Sensors,Actuators,TotNeurons}),
-			reenter_PublicScape(PS_PIds,Sensors,Actuators,Agent_Id,Morphology,TotNeurons);
-		reenter_PublicScape([],_Sensors,_Actuators,_Agent_Id,_Morphology,_TotNeurons)->
+		reenter_PublicScape([PS_PId|PS_PIds],Sensors,Actuators,Specie_Id,Morphology,TotNeurons)->
+			gen_server:call(PS_PId,{enter,Morphology,Specie_Id,Sensors,Actuators,TotNeurons,self()}),
+			reenter_PublicScape(PS_PIds,Sensors,Actuators,Specie_Id,Morphology,TotNeurons);
+		reenter_PublicScape([],_Sensors,_Actuators,_Specie_Id,_Morphology,_TotNeurons)->
+			ok.
+			
+		leave_PublicScape([PS_PId|PS_PIds])->
+			gen_server:call(PS_PId,{leave,self()}),
+			leave_PublicScape(PS_PIds);
+		leave_PublicScape([])->
 			ok.
 
 	link_Sensors([SId|Sensor_Ids],IdsNPIds,OpMode) ->
@@ -268,8 +282,7 @@ loop(S,test)->
 			{private,ScapeName}->
 				ets:lookup_element(IdsNPIds,ScapeName,2);
 			{public,ScapeName}->
-				%get_pid_of_forum
-				undefined;
+				ets:lookup_element(IdsNPIds,ScapeName,2);
 			_ ->
 				undefined
 		end,
@@ -290,12 +303,11 @@ loop(S,test)->
 			{private,ScapeName}->
 				ets:lookup_element(IdsNPIds,ScapeName,2);
 			{public,ScapeName}->
-				%get_pid_of_forum
-				undefined;
+				ets:lookup_element(IdsNPIds,ScapeName,2);
 			_ ->
 				undefined
 		end,
-		APId ! {self(),{AId,Cx_PId,Scape,AName,A#actuator.parameters,Fanin_PIds,OpMode}},
+		APId ! {self(),{AId,Cx_PId,Scape,AName,A#actuator.vl,A#actuator.parameters,Fanin_PIds,OpMode}},
 		link_Actuators(Actuator_Ids,IdsNPIds,OpMode);
 	link_Actuators([],_IdsNPIds,_OpMode)->
 		ok.
