@@ -1,12 +1,21 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % This source code and work is provided and developed by Gene I. Sher & DXNN Research Group WWW.DXNNResearch.COM
 %
-%Copyright (C) 2009 by Gene Sher, DXNN Research Group, CorticalComputer@gmail.com
-%All rights reserved.
+%The original release of this source code and the DXNN MK2 system was introduced and explained in my book: Handbook of Neuroevolution Through Erlang. Springer 2012, print ISBN: 978-1-4614-4462-6 ebook ISBN: 978-1-4614-4463-6. 
 %
-%This code is licensed under the version 3 of the GNU General Public License. Please see the LICENSE file that accompanies this project for the terms of use.
+%Copyright (C) 2009 by Gene Sher, DXNN Research Group CorticalComputer@gmail.com
 %
-%The original release of this source code and the DXNN MK2 system was introduced and explained (architecture and the logic behind it) in my book: Handbook of Neuroevolution Through Erlang. Springer 2012, print ISBN: 978-1-4614-4462-6 ebook ISBN: 978-1-4614-4463-6. 
+%   Licensed under the Apache License, Version 2.0 (the "License");
+%   you may not use this file except in compliance with the License.
+%   You may obtain a copy of the License at
+%
+%     http://www.apache.org/licenses/LICENSE-2.0
+%
+%   Unless required by applicable law or agreed to in writing, software
+%   distributed under the License is distributed on an "AS IS" BASIS,
+%   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%   See the License for the specific language governing permissions and
+%   limitations under the License.
 %%%%%%%%%%%%%%%%%%%% Deus Ex Neural Network :: DXNN %%%%%%%%%%%%%%%%%%%%
 
 -module(genotype).
@@ -278,8 +287,8 @@ update_fingerprint(Agent_Id)->
 	A = read({agent,Agent_Id}),
 	%io:format("A:~p~n",[A]),
 	Cx = read({cortex,A#agent.cx_id}),
-	GeneralizedSensors = [(read({sensor,S_Id}))#sensor{id=undefined,cx_id=undefined,fanout_ids=[]} || S_Id<-Cx#cortex.sensor_ids],
-	GeneralizedActuators = [(read({actuator,A_Id}))#actuator{id=undefined,cx_id=undefined,fanin_ids=[]} || A_Id<-Cx#cortex.actuator_ids],
+	GeneralizedSensors = [(read({sensor,S_Id}))#sensor{id=undefined,cx_id=undefined,fanout_ids=[],generation=undefined} || S_Id<-Cx#cortex.sensor_ids],
+	GeneralizedActuators = [(read({actuator,A_Id}))#actuator{id=undefined,cx_id=undefined,fanin_ids=[],generation=undefined} || A_Id<-Cx#cortex.actuator_ids],
 	GeneralizedPattern = [{LayerIndex,length(LNIds)}||{LayerIndex,LNIds}<-A#agent.pattern],
 	GeneralizedEvoHist = generalize_EvoHist(A#agent.evo_hist,[]),
 	N_Ids = Cx#cortex.neuron_ids,
@@ -633,7 +642,7 @@ create_test()->
 	Specie_Id = test,
 	Agent_Id = test,
 	%SpecCon = #constraint{},
-	SpecCon = #constraint{morphology=pole_balancing,connection_architecture=recurrent, population_evo_alg_f=generational,neural_afs=[tanh],agent_encoding_types=[neural],substrate_plasticities=[none]},
+	SpecCon = #constraint{morphology=forex_trader,connection_architecture=recurrent, population_evo_alg_f=generational,neural_afs=[tanh],agent_encoding_types=[neural],substrate_plasticities=[none],neural_pfns=[neuromodulation]},
 	F = fun()->
 		case genotype:read({agent,test}) of
 			undefined ->

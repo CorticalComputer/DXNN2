@@ -1,14 +1,28 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % This source code and work is provided and developed by Gene I. Sher & DXNN Research Group WWW.DXNNResearch.COM
 %
-%Copyright (C) 2009 by Gene Sher, DXNN Research Group, CorticalComputer@gmail.com
-%All rights reserved.
+%The original release of this source code and the DXNN MK2 system was introduced and explained in my book: Handbook of Neuroevolution Through Erlang. Springer 2012, print ISBN: 978-1-4614-4462-6 ebook ISBN: 978-1-4614-4463-6. 
 %
-%This code is licensed under the version 3 of the GNU General Public License. Please see the LICENSE file that accompanies this project for the terms of use.
+%Copyright (C) 2009 by Gene Sher, DXNN Research Group CorticalComputer@gmail.com
 %
-%The original release of this source code and the DXNN MK2 system was introduced and explained (architecture and the logic behind it) in my book: Handbook of Neuroevolution Through Erlang. Springer 2012, print ISBN: 978-1-4614-4462-6 ebook ISBN: 978-1-4614-4463-6. 
+%   Licensed under the Apache License, Version 2.0 (the "License");
+%   you may not use this file except in compliance with the License.
+%   You may obtain a copy of the License at
+%
+%     http://www.apache.org/licenses/LICENSE-2.0
+%
+%   Unless required by applicable law or agreed to in writing, software
+%   distributed under the License is distributed on an "AS IS" BASIS,
+%   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%   See the License for the specific language governing permissions and
+%   limitations under the License.
 %%%%%%%%%%%%%%%%%%%% Deus Ex Neural Network :: DXNN %%%%%%%%%%%%%%%%%%%%
-
+%TODO:
+%1. Add Hall-of-fame algorithm
+%2. Allow for phylogenetic tree to be built
+%3. Add Nueral-circuits
+%4. Connect to flatland
+%5. Update benchmark reporting?
 -record(sensor,{id,name,type,cx_id,scape,vl,fanout_ids=[],generation,format,parameters,gt_parameters,phys_rep,vis_rep,pre_f,post_f}). 
 -record(actuator,{id,name,type,cx_id,scape,vl,fanin_ids=[],generation,format,parameters,gt_parameters,phys_rep,vis_rep,pre_f,post_f}).
 -record(neuron, {id, generation, cx_id, pre_processor,signal_integrator,af, post_processor, pf, aggr_f, input_idps=[], input_idps_modulation=[], output_ids=[], ro_ids=[]}).
@@ -20,8 +34,6 @@
 -record(population,{id, polis_id, specie_ids=[], morphologies=[], innovation_factor, evo_alg_f, fitness_postprocessor_f, selection_f, trace=#trace{}}).
 -record(stat,{morphology,specie_id,avg_neurons,std_neurons,avg_fitness,std_fitness,max_fitness,min_fitness,gentest_fitness,avg_diversity,evaluations,time_stamp}).
 -record(topology_summary,{type,tot_neurons,tot_n_ils,tot_n_ols,tot_n_ros,af_distribution}).
--record(avatar,{id,sector,morphology,energy=0,health=0,food=0, age=0, kills=0, loc, direction, r, mass, objects=[], state,actuators,sensors}).
--record(object,{id,sector,type,color,loc,pivot,parameters=[]}).
 
 -record(constraint,{
 	morphology=xor_mimic, %xor_mimic 
@@ -48,17 +60,17 @@
 		{add_bias,1}, 
 		%{remove_bias,1}, 
 %		{mutate_af,1}, 
-		{add_outlink,1}, 
-		{add_inlink,1}, 
-		{add_neuron,1}, 
-		{outsplice,1},
+		{add_outlink,2}, 
+		{add_inlink,2}, 
+		{add_neuron,2}, 
+		{outsplice,3},
 		{add_sensorlink,1},
-		{add_actuatorlink,1}
-%		{add_sensor,1}, 
-%		{add_actuator,1},
+		{add_actuatorlink,1},
+		{add_sensor,1}, 
+		{add_actuator,1},
 %		{mutate_plasticity_parameters,1},
-%		{add_cpp,1},
-%		{add_cep,1}
+		{add_cpp,1},
+		{add_cep,1}
 	], %[{mutate_weights,1}, {add_bias,1}, {remove_bias,1}, {mutate_af,1}, {add_outlink,1}, {remove_outLink,1}, {add_inlink,1}, {remove_inlink,1}, {add_sensorlink,1}, {add_actuatorlink,1}, {add_neuron,1}, {remove_neuron,1}, {outsplice,1}, {insplice,1}, {add_sensor,1}, {remove_sensor,1}, {add_actuator,1}, {remove_actuator,1},{mutate_plasticity_parameters,1}]
 	tot_topological_mutations_fs = [{ncount_exponential,0.5}], %[{ncount_exponential,0.5},{ncount_linear,1}]
 	population_evo_alg_f=generational, %[generational, steady_state]
@@ -92,6 +104,19 @@
 	fitness_goal = inf,
 	benchmarker_pid
 }).
+
+%%%SCAPE RELATED%%%
+-record(polis,{id,scape_ids=[],population_ids=[],specie_ids=[],dx_ids=[],parameters=[]}).
+-record(scape,{id,type,physics,metabolics,sector2avatars,avatars=[],plants=[],walls=[],pillars=[],laws=[],anomolies=[],artifacts=[],objects=[],elements=[],atoms=[],scheduler=0}).
+-record(sector,{id,type,scape_pid,sector_size,physics,metabolics,sector2avatars,avatars=[],plants=[],walls=[],pillars=[],laws=[],anomolies=[],artifacts=[],objects=[],elements=[],atoms=[]}).
+-record(avatar,{id,sector,morphology,type,specie,energy=0,health=0,food=0,age=0,kills=0,loc,direction,r,mass,objects,vis=[],state,stats,actuators,sensors,sound,gestalt,spear}).
+-record(object,{id,sector,type,color,loc,pivot,elements=[],parameters=[]}).
+-record(circle,{id,sector,color,loc,pivot,r}).
+-record(square,{id,sector,color,loc,pivot,r}).
+-record(line,{id,sector,color,loc,pivot,coords}).
+-record(e,{id,sector,v_id,type,loc,pivot}).%pivot
+-record(a,{id,sector,v_id,type,loc,pivot,mass,properties}).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% LEGEND %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% sensor:
 %id= {{-1::LayerCoordinate, float()::Unique_Id()}, sensor}
 %name= atom()
