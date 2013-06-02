@@ -469,7 +469,7 @@ create_avatar(Morphology,Specie_Id,Id,Stats,Parameters)->
 create_avatar(Morphology,Specie_Id,Id,{CF,CT,TotNeurons},void,InitEnergy) when (Morphology == predator)  or (Morphology == prey) or (Morphology == automaton)->
 	case Morphology of
 		predator->
-			io:format("Creating Predator:~p~n",[{CF,CT,Id}]),
+			%io:format("Creating Predator:~p~n",[{CF,CT,Id}]),
 			%{CF,CT,TotNeurons} = Stats,
 			Color = red,
 			%Color=visor:ct2color(CT),
@@ -506,7 +506,7 @@ create_avatar(Morphology,Specie_Id,Id,{CF,CT,TotNeurons},void,InitEnergy) when (
 				stats = TotNeurons
 			};
 		prey ->
-			io:format("Creating Prey:~p~n",[{CF,CT,Id}]),
+			%io:format("Creating Prey:~p~n",[{CF,CT,Id}]),
 			%{CF,CT,TotNeurons} = Stats,
 			Direction = {DX,DY} = {1/math:sqrt(2),1/math:sqrt(2)},
 			{X,Y} = {random:uniform(800),random:uniform(500)},
@@ -732,7 +732,7 @@ destroy_avatar(ExoSelf_PId,State)->
 				undefined->
 					done;
 				{Visor_PId,_Canvas} ->
-					io:format("Avatar:~p~n",[Avatar]),
+					%io:format("Avatar:~p~n",[Avatar]),
 					[gs:destroy(Id) || {_ObjType,Id,_Color,_Pivot,_Coords,_Parameter} <- Avatar#avatar.objects]
 			end
 	end,
@@ -984,17 +984,8 @@ world_init(World_Type,Physics,Metabolics)->
 	World_Border = [{XMin,XMax},{YMin,YMax}],
 
 	case World_Type of
-		duel ->	
-			Id=genotype:generate_UniqueId(),
-			Plants=[create_avatar(plant,plant,Id,{undefined,undefined},respawn,Metabolics)|| _<-lists:duplicate(10,1)],
-			Walls = lists:append(create_walls(),create_pillars()),
-			Scape_Physics = [],
-			Plants++Walls;
-		hunt ->
-			[];
-		dangerous_hunt ->
-			[];
-		flatland ->
+
+		experimental ->
 			Walls = lists:append(create_walls(),create_pillars()),
 			Rocks = create_rocks(),
 			FirePits = create_firepits(),
@@ -1004,17 +995,11 @@ world_init(World_Type,Physics,Metabolics)->
 			Plants=[create_avatar(plant,plant,gen_id(),{undefined,return_valid(Rocks++FirePits)},respawn,Metabolics)||_<-lists:duplicate(10,1)],
 			Poisons=[create_avatar(poison,poison,gen_id(),{undefined,return_valid(Rocks++FirePits)},respawn,Metabolics)||_<-lists:duplicate(10,1)],
 			Plants;%++Rocks++Walls++Poisons++FirePits++Beacons;
-		dynamic ->
-			[];
-		baator ->
-			Id=genotype:generate_UniqueId(),
-			Plants=[create_avatar(plant,plant,Id,{undefined,undefined},respawn,Metabolics)|| _<-lists:duplicate(10,1)],
-			Poisons=[create_avatar(poison,poison,Id,{undefined,undefined},respawn,Metabolics)|| _<-lists:duplicate(10,1)],
-			Walls = lists:append(create_walls(),create_pillars()),
-			Scape_Physics = [],
-			Plants++Walls;
-		multi_agent ->
-			[]
+		flatland ->
+			Walls = create_walls(),
+			Plants=[create_avatar(plant,plant,gen_id(),{undefined,return_valid([])},respawn,Metabolics)||_<-lists:duplicate(10,1)],
+			Poisons=[create_avatar(poison,poison,gen_id(),{undefined,return_valid([])},respawn,Metabolics)||_<-lists:duplicate(10,1)],
+			Plants
 	end.
 
 world_behavior(Collision,Penetration,OAvatar,Avatar)->

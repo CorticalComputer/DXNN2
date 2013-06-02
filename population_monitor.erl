@@ -22,11 +22,11 @@
 %% API
 -export([start_link/1,start_link/0,start/1,start/0,stop/0,init/2]).
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3,create_MutantAgentCopy/1,test/0, create_specie/3, continue/2, continue/3, init_population/2, prep_PopState/2, extract_AgentIds/2,delete_population/1]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3,create_MutantAgentCopy/1,test/0, create_specie/3, continue/0, continue/1, init_population/2, prep_PopState/2, extract_AgentIds/2,delete_population/1]).
 -behaviour(gen_server).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Population Monitor Options & Parameters %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
--define(INIT_CONSTRAINTS,[#constraint{morphology=Morphology,connection_architecture=CA, population_evo_alg_f=generational,neural_pfns=[none],agent_encoding_types=[neural],substrate_plasticities=[iterative],substrate_linkforms = [l2l_feedforward]} || Morphology<-[prey],CA<-[feedforward]]).
+-define(INIT_CONSTRAINTS,[#constraint{morphology=Morphology,connection_architecture=CA, population_evo_alg_f=steady_state,neural_pfns=[none],agent_encoding_types=[neural],substrate_plasticities=[iterative],substrate_linkforms = [l2l_feedforward]} || Morphology<-[prey,predator],CA<-[feedforward]]).
 -record(state,{
 	op_mode = [gt],
 	population_id = test,
@@ -49,7 +49,7 @@
 	best_fitness,
 	survival_percentage = 0.5,
 	specie_size_limit = 10,
-	init_specie_size = 20,
+	init_specie_size = 10,
 	polis_id = mathema,
 	generation_limit = 100,
 	evaluations_limit = 100000,
@@ -494,12 +494,14 @@ init_population(Init_State,Specie_Constraints)->
 			create_specie(Population_Id,Specie_Id,Agent_Index-1,[Agent_Id|IdAcc],SpeCon,Fingerprint).
 %The create_Population/3 generates length(Specie_Constraints) number of specie, each composed of ?INIT_SPECIE_SIZE number of agents. The function uses the create_specie/4 to generate the species. The create_specie/3 and create_specie/4 functions are simplified versions which use default parameters to call the create_specie/6 function. The create_specie/6 function constructs the agents using the genotype:construct_Agent/3 function, accumulating the Agent_Ids in the IdAcc list. Once all the agents have been created, the function creates the specie record, fills in the required elements, writes the specie to database, and then finally returns the Specie_Id to the caller.
 
-continue(OpMode,Selection_Algorithm)->
-	Population_Id = test,
-	population_monitor:start({OpMode,Population_Id,Selection_Algorithm}).
-continue(OpMode,Selection_Algorithm,Population_Id)->
-	population_monitor:start({OpMode,Population_Id,Selection_Algorithm}).
-%The function continue/2 and continue/3 are used to summon an already existing population with Population_Id, and continue with the experiment using the Selection_Algorithm.
+continue()->
+	random:seed(now()),
+	population_monitor:start(#state{op_mode = [gt,benchmark]}).
+continue(Population_Id)->
+	random:seed(now()),
+	S = #state{population_id=Population_Id,op_mode = [gt,benchmark]},
+	population_monitor:start(S).
+%The function continue/0 and continue/1 are used to summon an already existing population with either the default population Id, or the specified Population_Id.
 
 mutate_population(Population_Id,KeepTot,Fitness_Postprocessor,Selection_Algorithm)->
 	NeuralEnergyCost = calculate_EnergyCost(Population_Id),
