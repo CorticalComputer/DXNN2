@@ -22,8 +22,8 @@
 -compile(export_all).
 -include("records.hrl").
 -define(DELTA_MULTIPLIER,math:pi()*2).
--define(SAT_LIMIT,math:pi()*2).
--define(SEARCH_PARAMTERS_MUTATION_PROBABILITY,0.1).
+-define(SAT_LIMIT,math:pi()*10).
+-define(SEARCH_PARAMTERS_MUTATION_PROBABILITY,0).
 -define(ES_MUTATORS,[
 	mutate_tuning_selection,
 %	mutate_tuning_duration, %This should not be mutated, since it must stay the same amongst all competing agents within a population.
@@ -786,7 +786,7 @@ outsplice(Agent_Id)->
 	{{LayerIndex,_UId},neuron} = N_Id,
 %Choose a random neuron in the output_ids for splicing, only forward facing.
 	OId_Pool = [{{OL,O_UId},OT} || {{OL,O_UId},OT} <- N#neuron.output_ids, OL > LayerIndex],
-	io:format("OIds:~p~nOIdPool:~p~n",[N#neuron.output_ids,OId_Pool]),
+	io:format("Outsplice:N_Id:~p~n OIds:~p~n OIdPool:~p~n",[N_Id,N#neuron.output_ids,OId_Pool]),
 	case OId_Pool of
 		[] ->
 			exit("********ERROR:neurolink_OutputSplice:: NeuroLink_OutputSplice O_IdPool == []");
@@ -794,33 +794,33 @@ outsplice(Agent_Id)->
 			O_Id = lists:nth(random:uniform(length(OId_Pool)),OId_Pool),
 			{{OutputLayerIndex,_Output_UId},_OutputType} = O_Id,
 %Create a new Layer, or select an existing one between N_Id and the O_Id, and create the new unlinked neuron.
-		NewLI = case OutputLayerIndex >= LayerIndex of
-			true ->
-				get_NewLI(LayerIndex,OutputLayerIndex,next,Pattern);
-			false ->
-				get_NewLI(LayerIndex,OutputLayerIndex,prev,Pattern)
-		end,
-		NewN_Id={{NewLI,genotype:generate_UniqueId()},neuron},
-		SpecCon = A#agent.constraint,
-		genotype:construct_Neuron(Cx_Id,Generation,SpecCon,NewN_Id,[],[]),
+			NewLI = case OutputLayerIndex >= LayerIndex of
+				true ->
+						get_NewLI(LayerIndex,OutputLayerIndex,next,Pattern);
+				false ->
+					get_NewLI(LayerIndex,OutputLayerIndex,prev,Pattern)
+			end,
+			NewN_Id={{NewLI,genotype:generate_UniqueId()},neuron},
+			SpecCon = A#agent.constraint,
+			genotype:construct_Neuron(Cx_Id,Generation,SpecCon,NewN_Id,[],[]),
 %Update pattern.
-		U_Pattern=case lists:keymember(NewLI,1,Pattern) of
-			true->
-				{NewLI,InLayerIds}=lists:keyfind(NewLI, 1, Pattern),
-				lists:keyreplace(NewLI, 1, Pattern, {NewLI,[NewN_Id|InLayerIds]});
-			false ->
-				lists:sort([{NewLI,[NewN_Id]}|Pattern])
-		end,
+			U_Pattern=case lists:keymember(NewLI,1,Pattern) of
+				true->
+					{NewLI,InLayerIds}=lists:keyfind(NewLI, 1, Pattern),
+					lists:keyreplace(NewLI, 1, Pattern, {NewLI,[NewN_Id|InLayerIds]});
+				false ->
+					lists:sort([{NewLI,[NewN_Id]}|Pattern])
+			end,
 %Disconnect the N_Id from the O_Id, and reconnect through NewN_Id
-		cutlink_FromElementToElement(A#agent.generation,N_Id,O_Id),
-		link_FromElementToElement(A#agent.generation,N_Id,NewN_Id),
-		link_FromElementToElement(A#agent.generation,NewN_Id,O_Id),
+			cutlink_FromElementToElement(A#agent.generation,N_Id,O_Id),
+			link_FromElementToElement(A#agent.generation,N_Id,NewN_Id),
+			link_FromElementToElement(A#agent.generation,NewN_Id,O_Id),
 %Updated agent
-		EvoHist = A#agent.evo_hist,
-		U_EvoHist = [{outsplice,N_Id,NewN_Id,O_Id}|EvoHist],
-		U_Cx = Cx#cortex{neuron_ids = [NewN_Id|Cx#cortex.neuron_ids]},
-		genotype:write(U_Cx),
-		genotype:write(A#agent{pattern=U_Pattern,evo_hist=U_EvoHist})
+			EvoHist = A#agent.evo_hist,
+			U_EvoHist = [{outsplice,N_Id,NewN_Id,O_Id}|EvoHist],
+			U_Cx = Cx#cortex{neuron_ids = [NewN_Id|Cx#cortex.neuron_ids]},
+			genotype:write(U_Cx),
+			genotype:write(A#agent{pattern=U_Pattern,evo_hist=U_EvoHist})
 	end.
 %The function outsplice/1 chooses a random neuron id from the cortex's neuron_ids list, disconnects it from a randomly chosen id in its output_ids list, and then reconnects it to the same element through a newly created neuron. The function first chooses a random neuron N with the neuron id N_Id from the cortex's neuron_ids list. Then the neuron N's output_ids list is extracted, and a new id list O_IdPool is created from the ids in the output_ids list that are located in the layer after the N_Id's layer (the ids of elements to whom the N_Id forms a feed forward connection). From that sublist of N's output_ids list, a random O_Id is chosen, and if the sublist is empty, then the function exits with an error. Then N_Id is disconnected from the O_Id. The function then creates or extracts a new layer index, NewLI, located between N_Id and O_Id. If there exists a layer between N_Id and O_Id, NewLI is simply that layer, if on the other hand O_Id's layer comes imedietly after N_Id's then a new layer is created between O_Id and N_Id, whose layer index is in the middle of the two elements. A new unconnected neuron is then created in that layer, with a neuron id NewN_Id, and connected to the O_Id, and from the N_Id, thus establishing a path from N_Id to O_Id through the NewN_Id. The cortex's neuron_ids is updated with the NewN_Id, and the agent's evo_hist list is updated with the new mutation operator tuple {outsplice,N_Id,Newn_Id,O_Id}. Finally, the updated cortex and agent are written to database.
 

@@ -23,16 +23,19 @@
 %3. Add Nueral-circuits
 %4. Connect to flatland
 %5. Update benchmark reporting?
--record(sensor,{id,name,type,cx_id,scape,vl,fanout_ids=[],generation,format,parameters,gt_parameters,phys_rep,vis_rep,pre_f,post_f}). 
+-define(BEHAVIORAL_TRACE,false).
+-define(INTERACTIVE_SELECTION,false).
+-record(sensor,{id,name,type,cx_id,scape,vl,fanout_ids=[],generation,format,parameters,gt_parameters,phys_rep,vis_rep,pre_f,post_f}).
 -record(actuator,{id,name,type,cx_id,scape,vl,fanin_ids=[],generation,format,parameters,gt_parameters,phys_rep,vis_rep,pre_f,post_f}).
 -record(neuron, {id, generation, cx_id, pre_processor,signal_integrator,af, post_processor, pf, aggr_f, input_idps=[], input_idps_modulation=[], output_ids=[], ro_ids=[]}).
 -record(cortex, {id, agent_id, neuron_ids=[], sensor_ids=[], actuator_ids=[]}).
--record(substrate, {id, agent_id, densities, linkform, plasticity=none, cpp_ids=[],cep_ids=[]}). 
--record(agent,{id, encoding_type, generation, population_id, specie_id, cx_id, fingerprint, constraint, evo_hist=[], fitness=0, innovation_factor=0, pattern=[], tuning_selection_f, annealing_parameter, tuning_duration_f, perturbation_range, mutation_operators,tot_topological_mutations_f,heredity_type,substrate_id}).
--record(specie,{id, population_id, fingerprint, constraint, agent_ids=[], dead_pool=[], champion_ids=[], fitness, innovation_factor={0,0},stats=[]}).
+-record(substrate, {id, agent_id, densities, linkform, plasticity=none, cpp_ids=[],cep_ids=[]}).
+-record(agent,{id, encoding_type, generation, population_id, specie_id, cx_id, fingerprint, constraint, evo_hist=[], fitness=0, innovation_factor=0, pattern=[], tuning_selection_f, annealing_parameter, tuning_duration_f, perturbation_range, mutation_operators, tot_topological_mutations_f, heredity_type, substrate_id, offspring_ids=[], parent_ids=[], champion_flag=[false], evolvability=0, brittleness=0, robustness=0, evolutionary_capacitance=0, behavioral_trace,fs=1,main_fitness}).
+-record(champion,{hof_fingerprint,id,fitness,main_fitness,tot_n,evolvability,robustness,brittleness,generation,behavioral_differences,fs}).
+-record(specie,{id, population_id, fingerprint, constraint, agent_ids=[], dead_pool=[], champion_ids=[], fitness, innovation_factor={0,0},stats=[], seed_agent_ids=[], hof_distinguishers=[tot_n], specie_distinguishers=[tot_n], hall_of_fame=[]}).
 -record(trace,{stats=[],tot_evaluations=0,step_size=500}).
--record(population,{id, polis_id, specie_ids=[], morphologies=[], innovation_factor, evo_alg_f, fitness_postprocessor_f, selection_f, trace=#trace{}}).
--record(stat,{morphology,specie_id,avg_neurons,std_neurons,avg_fitness,std_fitness,max_fitness,min_fitness,gentest_fitness,avg_diversity,evaluations,time_stamp}).
+-record(population,{id, polis_id, specie_ids=[], morphologies=[], innovation_factor, evo_alg_f, fitness_postprocessor_f, selection_f, trace=#trace{}, seed_agent_ids=[],seed_specie_ids=[]}).
+-record(stat,{morphology,specie_id,avg_neurons,std_neurons,avg_fitness,std_fitness,max_fitness,min_fitness,validation_fitness,avg_diversity,evaluations,time_stamp}).
 -record(topology_summary,{type,tot_neurons,tot_n_ils,tot_n_ols,tot_n_ros,af_distribution}).
 
 -record(constraint,{
@@ -60,10 +63,10 @@
 		{add_bias,1}, 
 		%{remove_bias,1}, 
 %		{mutate_af,1}, 
-		{add_outlink,2}, 
-		{add_inlink,2}, 
-		{add_neuron,2}, 
-		{outsplice,3},
+		{add_outlink,4}, 
+		{add_inlink,4}, 
+		{add_neuron,4}, 
+		{outsplice,4},
 		{add_sensorlink,1},
 		{add_actuatorlink,1},
 		{add_sensor,1}, 
@@ -75,7 +78,10 @@
 	tot_topological_mutations_fs = [{ncount_exponential,0.5}], %[{ncount_exponential,0.5},{ncount_linear,1}]
 	population_evo_alg_f=generational, %[generational, steady_state]
 	population_fitness_postprocessor_f=size_proportional, %[none,nsize_proportional]
-	population_selection_f=competition %[competition,top3]
+	population_selection_f=hof_competition, %[competition,top3]
+	specie_distinguishers=[tot_n],%[tot_n,tot_inlinks,tot_outlinks,tot_sensors,tot_actuators,pattern,tot_tanh,tot_sin,tot_cos,tot_gaus,tot_lin...]
+	hof_distinguishers=[tot_n],%[tot_n,tot_inlinks,tot_outlinks,tot_sensors,tot_actuators,pattern,tot_tanh,tot_sin,tot_cos,tot_gaus,tot_lin...]
+	objectives = [main_fitness,inverse_tot_n] %[main_fitness,problem_specific_fitness,other_optimization_factors...]
 }).
 -record(experiment,{
 	id,
@@ -97,7 +103,7 @@
 	population_id=test,
 	survival_percentage=0.5,
 	specie_size_limit=10,
-	init_specie_size=10,
+	init_specie_size=20,
 	polis_id = mathema,
 	generation_limit = 100,
 	evaluations_limit = 100000,

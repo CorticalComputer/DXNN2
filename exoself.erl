@@ -35,11 +35,11 @@
 	apids=[],
 	private_scape_pids=[],
 	public_scape_pids=[],
-	highest_fitness=-1,
+	highest_fitness,
 	eval_acc=0,
 	cycle_acc=0,
 	time_acc=0,
-	max_attempts=10,
+	max_attempts=15,
 	attempt=1,
 	tuning_duration_f,
 	tuning_selection_f,
@@ -135,25 +135,39 @@ prep(Agent_Id,PM_PId,OpMode)->
 		annealing_parameter=A#agent.annealing_parameter,
 		tuning_duration_f=A#agent.tuning_duration_f,
 		perturbation_range=A#agent.perturbation_range,
+%		max_attempts = 15 + round(math:sqrt(length(NIds) + length(SIds) + length(AIds))),
 		opmode=OpMode
 	},
-	io:format("S:~p~n",[{S,OpMode}]),
+	%io:format("S:~p~n",[{S,OpMode}]),
 	loop(S,OpMode).
 %The prep/2 function prepares and sets up the exoself's state before dropping into the main loop. The function first reads the agent and cortex records belonging to the Agent_Id NN based system. The function then reads the sensor, actuator, and neuron ids, then spawns the private scapes using the spawn_Scapes/3 function, spawns the cortex, sensor, actuator, and neuron processes, and then finally links up all these processes together using the link_.../2 processes. Once the phenotype has been generated from the genotype, the exoself drops into its main loop.
-
+-define(MIN_PIMPROVEMENT,0).
 loop(S,gt)->
 	receive
 		{Cx_PId,evaluation_completed,Fitness,Cycles,Time,GoalReachedFlag}->
 			%io:format("E Msg:~p~n E S:~p~n",[{Cx_PId,evaluation_completed,Fitness,Cycles,Time,GoalReachedFlag},S]),
 			IdsNPIds = S#state.idsNpids,
-			{U_HighestFitness,U_Attempt}=case Fitness > S#state.highest_fitness of
+			HighestFitness = case S#state.highest_fitness of
+				undefined ->
+					[Val-1||Val <- Fitness];
+				HiFi->
+					HiFi
+			end,	
+			{U_HighestFitness,U_Attempt}=case vec1_dominates_vec2(Fitness,HighestFitness,?MIN_PIMPROVEMENT) of %case Fitness > S#state.highest_fitness of %vec1_dominates_vec2(Avg_Fitness,HighestFitness,?MIN_PIMPROVEMENT)
 				true ->
 					[NPId ! {self(),weight_backup} || NPId <- S#state.npids],
+					A=genotype:dirty_read({agent,S#state.agent_id}),
+					[Main_Fitness|_] = Fitness,
+					genotype:write(A#agent{
+						fitness=Fitness,
+						main_fitness = Main_Fitness
+					}),
+					backup_genotype(S#state.idsNpids,S#state.npids),
 					{Fitness,0};
 				false ->
 					Perturbed_NIdPs=get(perturbed),
 					[ets:lookup_element(IdsNPIds,NId,2) ! {self(),weight_restore} || {NId,_Spread} <- Perturbed_NIdPs],
-					{S#state.highest_fitness,S#state.attempt+1}
+					{HighestFitness,S#state.attempt+1}
 			end,
 			[PId ! {self(), reset_prep} || PId <- S#state.npids],
 			gather_acks(length(S#state.npids)),
@@ -175,9 +189,13 @@ loop(S,gt)->
 			gen_server:cast(S#state.pm_pid,{self(),evaluations,S#state.specie_id,1,Cycles,Time}),
 			case (U_Attempt >= S#state.max_attempts) or (GoalReachedFlag == true) of
 				true ->	%End training
-					A=genotype:dirty_read({agent,S#state.agent_id}),
-					genotype:write(A#agent{fitness=U_HighestFitness}),
-					backup_genotype(S#state.idsNpids,S#state.npids),
+%					A=genotype:dirty_read({agent,S#state.agent_id}),
+%					[Main_Fitness|_] = U_HighestFitness,
+%					genotype:write(A#agent{
+%						fitness=U_HighestFitness,
+%						main_fitness = Main_Fitness
+%					}),
+%					backup_genotype(S#state.idsNpids,S#state.npids),
 					terminate_phenotype(S#state.cx_pid,S#state.spids,S#state.npids,S#state.apids,S#state.private_scape_pids,S#state.cpp_pids,S#state.cep_pids,S#state.substrate_pid),
 					case GoalReachedFlag of
 						true ->
@@ -211,13 +229,13 @@ loop(S,gt)->
 		%after 10000 ->
 		%	io:format("exoself:~p stuck.~n",[S#state.agent_id])
 	end;
-loop(S,benchmark)->
-	io:format("In the Benchmark loop~n"),
+loop(S,validation)->
+	io:format("In the Validation loop~n"),
 	receive
 		{Cx_PId,evaluation_completed,Fitness,Cycles,Time,GoalReachedFlag}->
 			terminate_phenotype(S#state.cx_pid,S#state.spids,S#state.npids,S#state.apids,S#state.private_scape_pids,S#state.cpp_pids,S#state.cep_pids,S#state.substrate_pid),
-			io:format("Benchmark complete, agent:~p terminating. Fitness:~p~n TotCycles:~p~n TimeAcc:~p Goal:~p~n",[self(),Fitness,Cycles,Time,GoalReachedFlag]),
-			S#state.pm_pid ! {self(),benchmark_complete,S#state.specie_id,Fitness,Cycles,Time}
+			io:format("Validation complete, agent:~p terminating. Fitness:~p~n TotCycles:~p~n TimeAcc:~p Goal:~p~n",[self(),Fitness,Cycles,Time,GoalReachedFlag]),
+			S#state.pm_pid ! {self(),validation_complete,S#state.specie_id,Fitness,Cycles,Time}
 	end;
 loop(S,test)->
 	io:format("In the Test loop~n"),
@@ -230,6 +248,65 @@ loop(S,test)->
 	end.
 %The exoself process' main loop awaits from its cortex proccess the evoluation_completed message. Once the message is received, based on the fitness achieved, exoself decides whether to continue tunning the weights or terminate the system. Exoself tries to improve the fitness by perturbing/tuning the weights of its neurons, after each tuning session, the Neural Network based system performs another evaluation by interacting with the scape until completion (the NN solves a problem, or dies within the scape or...). The order of events is important: When evaluation_completed message is received, the function first checks whether the newly achieved fitness is higher than the highest fitness achieved so far. If it is not, the function sends the neurons a message to restore their weights to previous state, during which it last acehived the highest fitness instead of their current state which yielded the current lower fitness score. If on the other hand the new fitness is higher than the previously highest achieved fitness, then the function tells the neurons to backup their current weights, as these weights represent the NN's best, most fit form yet. Exoself then tells all the neurons to prepare for a reset by sending each neuron the {self(),reset_prep} message. Since the NN can have recursive connections, and the manner in which initial recursive messages are sent, it is important for each neuron to flush their buffers to be reset into an initial fresh state, which is achieved after the neurons receive the reset_prep message. The function then sends the reset message to the neurons, which returns them into their main loop. Finally, the function checks whether exoself has already tried to improve the NN's fitness a maximum S#state.max_attempts number of times. If that is the case, the exoself process backs up the updated NN (the updated, tuned weights) to database using the backup_genotype/2 function, prints to screen that it is terminating, and sends to the population_monitor the acumulated statistics (highest fitness, evaluation count, cycle count...). On the other hand, if the exoself is not yet done tuning the neural weights, it has not yet reached its ending condition, it uses a tuning_selection_function to compose a list of tuples: [{NId,Spread}...] of neuron ids and the perturbation spread values, where the spread is the range from which the perturbation is randomly chosen. The spread itself is based on the age of the slected neuron, using the annealing_factor value, which when set to 1 implies that there is no annealing, and when set to a value less than 1, decreases the Spread. Once this list of elements is composed, the exoself sends each of the neurons a message to perturb their synaptic weights using the Spread value. The exoself then reactivates the cortex, and drops back into its main loop.
 
+		vec1_dominates_vec2(A,B,MIP)->
+			%io:format("A:~p~nB:~p~nMIP:~p~n",[A,B,MIP]),
+			VecDif=vec1_dominates_vec2(A,B,MIP,[]),
+			%io:format("VecDif:~p~n",[VecDif]),
+			TotElems = length(VecDif),
+			DifElems=length([Val || Val<-VecDif, Val > 0]),
+			case DifElems of
+				TotElems->%Complete Superiority
+					true;
+				0 ->%Complete Inferiority
+					false;
+				_ ->%Variation, pareto front TODO
+					false
+			end.
+		vec1_dominates_vec2([Val1|Vec1],[Val2|Vec2],MIP,Acc)->
+			vec1_dominates_vec2(Vec1,Vec2,MIP,[Val1-(Val2+Val2*MIP)|Acc]);
+		vec1_dominates_vec2([],[],_MIP,Acc)->
+			Acc.
+		
+		vector_avg(Vec,Length)->vector_avg(Vec,[],0,[],Length).
+		vector_avg([Vec|Vectors],RemAcc,ValAcc,VecAcc,Length)->
+			case Vec of
+				[]->
+					lists:reverse(VecAcc);
+				[Val|Rem]->
+					vector_avg(Vectors,[Rem|RemAcc],Val+ValAcc,VecAcc,Length)
+			end;
+		vector_avg([],RemAcc,ValAcc,VecAcc,Length)->
+			vector_avg(RemAcc,[],0,[ValAcc/Length|VecAcc],Length).
+			
+		vector_basic_stats(VectorList)->
+			T_VectorList = transpose(VectorList,[],[],[]),%Does not retain order
+			[VecSample|_TVL] = T_VectorList,
+			Length = length(VecSample),
+			AvgVector = [lists:sum(V)/Length || V<-T_VectorList],
+			io:format("AvgVector:~p Length:~p T_VectorList:~p~n",[AvgVector,Length,T_VectorList]),
+			StdVector = std_vector(T_VectorList,AvgVector,[]),%[[functions:std(List,Avg,[])|| List<-T_VectorList] || Avg<- AvgVector],
+			MaxVector = lists:max(VectorList),
+			MinVector = lists:min(VectorList),
+			{MaxVector,MinVector,AvgVector,StdVector}.
+		
+			std_vector([List|T_VectorList],[Avg|AvgVector],Acc)->
+				std_vector(T_VectorList,AvgVector,[functions:std(List,Avg,[])|Acc]);
+			std_vector([],[],Acc)->
+				lists:reverse(Acc).
+				
+		transpose(VectorList)->transpose(VectorList,[],[],[]).
+		transpose([V|VectorList],RemAcc,ValAcc,VecAcc)->
+			case V of
+				[] ->
+					lists:reverse(VecAcc);
+				[Val|Rem] ->
+					transpose(VectorList,[Rem|RemAcc],[Val|ValAcc],VecAcc);
+				UNKOWN_PATTERN ->
+					exit("ERROR:~p~n",[UNKOWN_PATTERN])
+			end;
+		transpose([],RemAcc,ValAcc,VecAcc)->
+			transpose(RemAcc,[],[],[ValAcc|VecAcc]).
+			
 	spawn_CerebralUnits(IdsNPIds,CerebralUnitType,[Id|Ids])-> 
 		PId = CerebralUnitType:gen(self(),node()),
 		ets:insert(IdsNPIds,{Id,PId}), 

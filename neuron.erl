@@ -20,7 +20,7 @@
 -module(neuron).
 -compile(export_all).
 -include("records.hrl").
--define(SAT_LIMIT,math:pi()).
+-define(SAT_LIMIT,math:pi()*10).
 -define(OUTPUT_SAT_LIMIT,1).
 -define(RO_SIGNAL,0).
 -record(state,{

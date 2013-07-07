@@ -55,7 +55,7 @@ pts(ExoSelf_PId,Result,Parameters,VL,_Scape)->
 		test ->
 			{[1,0,0],0};
 		_ ->
-			{1,0}
+			{[1],0}
 	end.
 %The pts/2 actuation function simply prints to screen the vector passed to it.
 
@@ -67,7 +67,7 @@ xor_SendOutput(ExoSelf_PId,Output,_Parameters,VL,Scape)->
 				test ->
 					{[Fitness,0,0],HaltFlag};
 				_ ->
-					{Fitness,HaltFlag}
+					{[Fitness],HaltFlag}
 			end
 	end.
 %xor_sim/2 function simply forwards the Output vector to the XOR simulator, and waits for the resulting Fitness and EndFlag from the simulation process.
@@ -80,7 +80,7 @@ pb_SendOutput(ExoSelf_PId,Output,Parameters,VL,Scape)->
 				test ->
 					{[Fitness,0,0],HaltFlag};
 				_ ->
-					{Fitness,HaltFlag}
+					{[Fitness],HaltFlag}
 			end
 	end.
 	
@@ -93,7 +93,7 @@ dtm_SendOutput(ExoSelf_PId,Output,Parameters,VL,Scape)->
 				test ->
 					{[Fitness,0,0],HaltFlag};
 				_ ->
-					{Fitness,HaltFlag}
+					{[Fitness],HaltFlag}
 			end
 	end.
 	
@@ -111,7 +111,7 @@ two_wheels(ExoSelf_PId,Output,Parameters,VL,Scape)->
 		test ->
 			{[Fitness,0,0],HaltFlag};
 		_ ->
-			{Fitness,HaltFlag}
+			{[Fitness],HaltFlag}
 	end.
 	
 fx_Trade(ExoSelf_PId,Output,Parameters,VL,Scape)->
@@ -124,7 +124,7 @@ fx_Trade(ExoSelf_PId,Output,Parameters,VL,Scape)->
 				test ->
 					{[Fitness,0,0],HaltFlag};
 				_ ->
-					{Fitness,HaltFlag}
+					{[Fitness],HaltFlag}
 			end
 	end.
 	
@@ -136,6 +136,6 @@ abc_pred(ExoSelf,[Output],Parameters,VL,Scape)->
 				test ->
 					{[Fitness,0,0],HaltFlag};
 				_ ->
-					{Fitness,HaltFlag}
+					{[Fitness],HaltFlag}
 			end
 	end.

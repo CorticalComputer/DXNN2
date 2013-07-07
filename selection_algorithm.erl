@@ -23,147 +23,265 @@
 -include("records.hrl").
 -define(SURVIVAL_PERCENTAGE,0.5).
 
-competition(ProperlySorted_AgentSummaries,NeuralEnergyCost,PopulationLimit)->
-	TotSurvivors = round(length(ProperlySorted_AgentSummaries)*?SURVIVAL_PERCENTAGE),
-	Valid_AgentSummaries = lists:sublist(ProperlySorted_AgentSummaries,TotSurvivors),
-	Invalid_AgentSummaries = ProperlySorted_AgentSummaries -- Valid_AgentSummaries,
-	{_,_,Invalid_AgentIds} = lists:unzip3(Invalid_AgentSummaries),
-	[genotype:delete_Agent(Agent_Id) || Agent_Id <- Invalid_AgentIds],
-	io:format("Valid_AgentSummaries:~p~n",[Valid_AgentSummaries]),
-	io:format("Invalid_AgentSummaries:~p~n",[Invalid_AgentSummaries]),
-	TopAgentSummaries = lists:sublist(Valid_AgentSummaries,3),
-	{_TopFitnessList,_TopTotNs,TopAgent_Ids} = lists:unzip3(TopAgentSummaries),
-	io:format("NeuralEnergyCost:~p~n",[NeuralEnergyCost]),
+-define(SHOF_RATIO,1).
+-define(SPECIE_SIZE_LIMIT,10).
+-define(REENTRY_PROBABILITY,0.0).
+-define(EFF,1). %Efficiency., TODO: this should further be changed from absolute number of neurons, to diff in lowest or avg, and the highest number of neurons
 
-	{AlotmentsP,NextGenSize_Estimate} = calculate_alotments(Valid_AgentSummaries,NeuralEnergyCost,[],0),
-	Normalizer = NextGenSize_Estimate/PopulationLimit,
-	io:format("Population size normalizer:~p~n",[Normalizer]),
-	NewGenAgent_Ids = gather_survivors(AlotmentsP,Normalizer,[]),
-	{NewGenAgent_Ids,TopAgent_Ids}.
-%The competition/3 is part of the selection algorithm dubbed "competition". The function first executes calculate_alotments/4 to calculate the number of offspring alloted for each agent in the Sorted_AgentSummaries list. The function then calculates the Normalizer value, which is used then used to proportionalize the alloted number of offspring to each agent, to ensure that the final specie size is within PopulationLimit. The function then drops into the gather_survivors/3 function which, using the normalized offspring allotment values, creates the actual mutant offspring.
-
-competition_WithDiversifier(ProperlySorted_AgentSummaries,NeuralEnergyCost,PopulationLimit)->
-	TotSurvivors = round(length(ProperlySorted_AgentSummaries)*?SURVIVAL_PERCENTAGE),
-	Valid_AgentSummaries=uniquify(ProperlySorted_AgentSummaries,TotSurvivors),
-	%Valid_AgentSummaries = lists:sublist(ProperlySorted_AgentSummaries,TotSurvivors),
-	Invalid_AgentSummaries = ProperlySorted_AgentSummaries -- Valid_AgentSummaries,
-	{_FitnessList,_TotNList,Invalid_AgentIds} = lists:unzip3(Invalid_AgentSummaries),
-	[genotype:delete_Agent(Agent_Id) || Agent_Id <- Invalid_AgentIds],
-	io:format("Valid_AgentSummaries:~p~n",[Valid_AgentSummaries]),
-	io:format("Invalid_AgentSummaries:~p~n",[Invalid_AgentSummaries]),
-	TopAgentSummaries = lists:sublist(Valid_AgentSummaries,3),
-	{_TopFitnessList,_TopTotNs,TopAgent_Ids} = lists:unzip3(TopAgentSummaries),
-	io:format("NeuralEnergyCost:~p~n",[NeuralEnergyCost]),
-
-	{AlotmentsP,NextGenSize_Estimate} = calculate_alotments(Valid_AgentSummaries,NeuralEnergyCost,[],0),
-	Normalizer = NextGenSize_Estimate/PopulationLimit,
-	io:format("Population size normalizer:~p~n",[Normalizer]),
-	NewGenAgent_Ids = gather_survivors(AlotmentsP,Normalizer,[]),
-	{NewGenAgent_Ids,TopAgent_Ids}.
-	
-	
-	uniquify(ProperlySorted_DXSummaries,TotSurvivors)->
-		[DX_Summary|Sorted_DXSummaries] = ProperlySorted_DXSummaries,%lists:sublist(ProperlySorted_DXSummaries,TotSurvivors),
-		%[DX_Summary|Sorted_DXSummaries] = lists:sublist(ProperlySorted_DXSummaries,TotSurvivors),
-		{Fitness,TotN,_DX_Id} = DX_Summary,
-		Diversified_DXSummaries = diversify([{Fitness,TotN}],Sorted_DXSummaries,TotSurvivors-1,[DX_Summary]).
-			
-		diversify(_TopProfiles,_Sorted_DXSummaries,0,Acc)->
-			lists:reverse(Acc);
-		diversify(Profiles,[DX_Summary|Sorted_DXSummaries],KeepTot,Acc)->
-			{Fitness,TotN,DX_Id} = DX_Summary,
-			%case compare_profiles(Profiles,Profile) of
-			case compare_profilesf(Profiles,{Fitness,TotN}) of
-				true->
-					diversify([{Fitness,TotN}|Profiles],Sorted_DXSummaries,KeepTot-1,[DX_Summary|Acc]);
+		hof_competition(Specie_Id,RemainingChampionDesignators)->%returns a list of new generation of agents for a single specie
+			[S] = mnesia:read({specie,Specie_Id}),
+			io:format("HOF_COMEPTITION S:~p~n",[S]),
+			mnesia:write(S#specie{agent_ids=[]}),
+			SHOF = S#specie.hall_of_fame,
+			NewGen_Ids=case ?SHOF_RATIO < 1 of
+				true ->
+					Agent_Ids = S#specie.agent_ids,
+					Distinguishers = S#specie.hof_distinguishers,
+					%Actives = to_champion_form(Agent_Ids,Distinguishers,[]) -- SHOF,
+					Actives = RemainingChampionDesignators,
+					io:format("SHOF:~p~n",[SHOF]),
+					io:format("Actives:~p~n",[Actives]),
+					SHOF_FitnessScaled=[{Champ#champion.fs*Champ#champion.main_fitness/math:pow(Champ#champion.tot_n,?EFF),Champ#champion.id}||Champ<-SHOF],
+					Active_FitnessScaled=[{Ac#champion.fs*Ac#champion.main_fitness/math:pow(Ac#champion.tot_n,?EFF),Ac#champion.id}||Ac<-Actives],
+					TotFitnessActives = lists:sum([Main_Fitness || {Main_Fitness,_Id}<-Active_FitnessScaled]),
+					TotFitnessSHOFs = lists:sum([Main_Fitness || {Main_Fitness,_Id}<-SHOF_FitnessScaled]),
+					%io:format("TotFitnessActives:~p~nTotFitnessSHOFs:~p~n",[TotFitnessActives,TotFitnessSHOFs]),
+					choose_Winners(Specie_Id,Active_FitnessScaled,TotFitnessActives,[],[],round((1-?SHOF_RATIO)*?SPECIE_SIZE_LIMIT))++
+					choose_Winners(Specie_Id,SHOF_FitnessScaled,TotFitnessSHOFs,[],[],round(?SHOF_RATIO*?SPECIE_SIZE_LIMIT));
 				false ->
-					diversify(Profiles,Sorted_DXSummaries,KeepTot,Acc)
-			end;
-		diversify(_TopProfiles,[],KeepTot,Acc)->
-			lists:reverse(Acc).
+					io:format("SHOF:~p~n",[SHOF]),
+					%io:format("RemainingChampionDesignators:~p~n",[RemainingChampionDesignators]),
+					Allotments=[{Champ#champion.fs*(Champ#champion.main_fitness/math:pow(Champ#champion.tot_n,?EFF)),Champ#champion.id}||Champ<-SHOF],
+					%io:format("Allotments:~p~n",[Allotments]),
+					Tot = lists:sum([Main_Fitness || {Main_Fitness,_Id}<-Allotments]),
+					%io:format("Tot:~p~n",[Tot]),
+					choose_Winners(Specie_Id,Allotments,Tot,[],[],?SPECIE_SIZE_LIMIT)
+			end,
+			io:format("NewGen_Ids:~p~n",[NewGen_Ids]),
+			[U_S] = mnesia:read({specie,Specie_Id}),
+			mnesia:write(U_S#specie{agent_ids=NewGen_Ids}),
+			NewGen_Ids.
+		
+		hof_rank(Specie_Id,RemainingChampionDesignators)->
+			[S] = mnesia:read({specie,Specie_Id}),
+			io:format("S:~p~n",[S]),
+			mnesia:write(S#specie{agent_ids=[]}),
+			SHOF = S#specie.hall_of_fame,
+			NewGen_Ids=case ?SHOF_RATIO < 1 of
+				true ->
+					Agent_Ids = S#specie.agent_ids,
+					Distinguishers = S#specie.hof_distinguishers,
+					%Actives = to_champion_form(Agent_Ids,Distinguishers,[]) -- SHOF,
+					Actives = RemainingChampionDesignators,
+					io:format("SHOF:~p~n",[SHOF]),
+					io:format("Actives:~p~n",[Actives]),
+					Actives_Ranked=assign_rank(lists:sort([{Ac#champion.fs*Ac#champion.main_fitness,Ac#champion.id}||Ac<-Actives]), lists:seq(1,length(Actives)),[]),
+					SHOF_Ranked=assign_rank(lists:sort([{Champ#champion.fs*Champ#champion.main_fitness,Champ#champion.id}||Champ<-SHOF]), lists:seq(1,length(SHOF)),[]),
+					TotFitnessActives = lists:sum([Main_Fitness || {Main_Fitness,_Id}<-Actives_Ranked]),
+					TotFitnessSHOFs = lists:sum([Main_Fitness || {Main_Fitness,_Id}<-SHOF_Ranked]),
+					io:format("Actives_Ranked:~p~nSHOF_Ranked:~p~n",[Actives_Ranked,SHOF_Ranked]),
+					choose_Winners(Specie_Id,Actives_Ranked,TotFitnessActives,[],[],round((1-?SHOF_RATIO)*?SPECIE_SIZE_LIMIT))++
+					choose_Winners(Specie_Id,SHOF_Ranked,TotFitnessSHOFs,[],[],round(?SHOF_RATIO*?SPECIE_SIZE_LIMIT));
+					
+				false ->
+					SHOF = S#specie.hall_of_fame,
+					Allotments=assign_rank(lists:sort([{Champ#champion.fs*Champ#champion.main_fitness,Champ#champion.id}||Champ<-SHOF]),lists:seq(1,length(SHOF)),[]),
+					Tot = lists:sum([Val || {Val,_Id}<-Allotments]),
+					choose_Winners(Specie_Id,Allotments,Tot,[],[],?SPECIE_SIZE_LIMIT)
+			end,
+			io:format("NewGen_Ids:~p~n",[NewGen_Ids]),
+			[U_S] = mnesia:read({specie,Specie_Id}),
+			mnesia:write(U_S#specie{agent_ids=NewGen_Ids}),
+			NewGen_Ids.
 			
-			compare_profilesf([{TopFitness,TopTotN}|TopProfiles],{Fitness,TotN})->%Better make Fitnes part of profile
-				case (TopTotN == TotN) of% and (TopFitness == Fitness) of
+			assign_rank([{_MainFitness,Agent_Id}|Champions],[Rank|RankList],Acc)->
+				assign_rank(Champions,RankList,[{Rank,Agent_Id}|Acc]);
+			assign_rank([],[],Acc)->
+				io:format("Rank:~p~n",[Acc]),
+				Acc.
+			
+		hof_top3(Specie_Id,_RemainingChampionDesignators)->
+			[S] = mnesia:read({specie,Specie_Id}),
+			mnesia:write(S#specie{agent_ids=[]}),
+			SHOF = S#specie.hall_of_fame,
+			Allotments = lists:sublist(lists:reverse(lists:sort([{Champ#champion.fs*Champ#champion.main_fitness,Champ#champion.id}||Champ<-SHOF])),3),
+			Tot = lists:sum([Val || {Val,_Id}<-Allotments]),
+			io:format("SHOF:~p~n",[SHOF]),
+			io:format("Allotments:~p~n",[Allotments]),
+			NewGen_Ids=choose_Winners(Specie_Id,Allotments,Tot,[],[],?SPECIE_SIZE_LIMIT),
+			io:format("NewGen_Ids:~p~n",[NewGen_Ids]),
+			[U_S] = mnesia:read({specie,Specie_Id}),
+			mnesia:write(U_S#specie{agent_ids=NewGen_Ids}),
+			NewGen_Ids.
+		
+		hof_efficiency(Specie_Id,RemainingChampionDesignators)->
+			[S] = mnesia:read({specie,Specie_Id}),
+			mnesia:write(S#specie{agent_ids=[]}),
+			SHOF = S#specie.hall_of_fame,
+			NewGen_Ids=case ?SHOF_RATIO < 1 of
+				true ->
+					Agent_Ids = S#specie.agent_ids,
+					Distinguishers = S#specie.hof_distinguishers,
+					%Actives = to_champion_form(Agent_Ids,Distinguishers,[]),
+					Actives = RemainingChampionDesignators,
+					io:format("SHOF:~p~n",[SHOF]),
+					io:format("Actives:~p~n",[Actives]),
+					Active_NeuralEfficiencyScaled=[{Ac#champion.fs*Ac#champion.main_fitness/Ac#champion.tot_n,Ac#champion.id}||Ac<-Actives],
+					SHOF_NeuralEfficiencyScaled=[{Champ#champion.fs*Champ#champion.main_fitness/Champ#champion.tot_n,Champ#champion.id}||Champ<-SHOF],
+					TotFitnessActives = lists:sum([Main_Fitness || {Main_Fitness,_Id}<-Active_NeuralEfficiencyScaled]),
+					TotFitnessSHOFs = lists:sum([Main_Fitness || {Main_Fitness,_Id}<-SHOF_NeuralEfficiencyScaled]),
+					io:format("TotFitnessActives:~p~nTotFitnessSHOFs:~p~n",[TotFitnessActives,TotFitnessSHOFs]),
+					choose_Winners(Specie_Id,Active_NeuralEfficiencyScaled,TotFitnessActives,[],[],round((1-?SHOF_RATIO)*?SPECIE_SIZE_LIMIT))++
+					choose_Winners(Specie_Id,SHOF_NeuralEfficiencyScaled,TotFitnessSHOFs,[],[],round(?SHOF_RATIO*?SPECIE_SIZE_LIMIT));
+				false ->
+					io:format("SHOF:~p~n",[SHOF]),
+					SHOF_NeuralEfficiencyScaled=[{Champ#champion.fs*Champ#champion.main_fitness/Champ#champion.tot_n,Champ#champion.id}||Champ<-SHOF],
+					io:format("SHOF_NeuralEfficiencyScaled:~p~n",[SHOF_NeuralEfficiencyScaled]),
+					TotFitnessSHOFs = lists:sum([Main_Fitness || {Main_Fitness,_Id}<-SHOF_NeuralEfficiencyScaled]),
+					io:format("TotFitnessSHOFs:~p~n",[TotFitnessSHOFs]),
+					choose_Winners(Specie_Id,SHOF_NeuralEfficiencyScaled,TotFitnessSHOFs,[],[],?SPECIE_SIZE_LIMIT)
+			end,
+			io:format("NewGen_Ids:~p~n",[NewGen_Ids]),
+			[U_S] = mnesia:read({specie,Specie_Id}),
+			mnesia:write(U_S#specie{agent_ids=NewGen_Ids}),
+			NewGen_Ids.
+			
+		hof_random(Specie_Id,RemainingChampionDesignators)->
+			[S] = mnesia:read({specie,Specie_Id}),
+			mnesia:write(S#specie{agent_ids=[]}),
+			SHOF = S#specie.hall_of_fame,
+			NewGen_Ids=case ?SHOF_RATIO < 1 of
+				true ->
+					Agent_Ids = S#specie.agent_ids,
+					Distinguishers = S#specie.hof_distinguishers,
+					%Actives = to_champion_form(Agent_Ids,Distinguishers,[]),
+					Actives = RemainingChampionDesignators,
+					io:format("SHOF:~p~n",[SHOF]),
+					io:format("Actives:~p~n",[Actives]),
+					Active_RandomScaled=[{Ac#champion.fs*1,Ac#champion.id}||Ac<-Actives],
+					SHOF_RandomScaled=[{Champ#champion.fs*1,Champ#champion.id}||Champ<-SHOF],
+					TotFitnessActives = lists:sum([Main_Fitness || {Main_Fitness,_Id}<-Active_RandomScaled]),
+					TotFitnessSHOFs = lists:sum([Main_Fitness || {Main_Fitness,_Id}<-SHOF_RandomScaled]),
+					io:format("TotFitnessActives:~p~nTotFitnessSHOFs:~p~n",[TotFitnessActives,TotFitnessSHOFs]),
+					choose_Winners(Specie_Id,Active_RandomScaled,TotFitnessActives,[],[],round((1-?SHOF_RATIO)*?SPECIE_SIZE_LIMIT))++
+					choose_Winners(Specie_Id,SHOF_RandomScaled,TotFitnessSHOFs,[],[],round(?SHOF_RATIO*?SPECIE_SIZE_LIMIT));
+				false ->
+					SHOF = S#specie.hall_of_fame,
+					io:format("SHOF:~p~n",[SHOF]),
+					SHOF_RandomScaled=[{Champ#champion.fs*1,Champ#champion.id}||Champ<-SHOF],
+					TotFitnessSHOFs = lists:sum([Main_Fitness || {Main_Fitness,_Id}<-SHOF_RandomScaled]),
+					io:format("TotalOffspring:~p~n",[round(?SHOF_RATIO*?SPECIE_SIZE_LIMIT)]),
+					choose_Winners(Specie_Id,SHOF_RandomScaled,TotFitnessSHOFs,[],[],?SPECIE_SIZE_LIMIT)
+			end,
+			io:format("NewGen_Ids:~p~n",[NewGen_Ids]),
+			[U_S] = mnesia:read({specie,Specie_Id}),
+			mnesia:write(U_S#specie{agent_ids=NewGen_Ids}),
+			NewGen_Ids.
+
+			choose_Winners(Specie_Id,Agents,TotalFitness,OffspringAcc,ReentryAcc,0)->
+				reenter(ReentryAcc,Specie_Id),
+				OffspringAcc++ReentryAcc;
+			choose_Winners(Specie_Id,Agents,TotalFitness,OffspringAcc,ReentryAcc,AgentIndex)->
+				%io:format("1~n"),
+				case choose_Winner(Specie_Id,Agents,(random:uniform(100)/100)*TotalFitness,0) of
+					{OffspringId,offspring}->%io:format("2~n"),
+						choose_Winners(Specie_Id,Agents,TotalFitness,[OffspringId|OffspringAcc],ReentryAcc,AgentIndex-1);
+					{Agent_Id,reentry}->%io:format("3~n"),
+						case lists:member(Agent_Id,ReentryAcc) of
+							true ->%io:format("4~n"),
+								choose_Winners(Specie_Id,Agents,TotalFitness,OffspringAcc,ReentryAcc,AgentIndex);
+							false ->%io:format("5~n"),
+								choose_Winners(Specie_Id,Agents,TotalFitness,OffspringAcc,[Agent_Id|ReentryAcc],AgentIndex-1)
+						end
+						
+				end.
+				
+				reenter([Agent_Id|ReentryIds],Specie_Id)->
+					io:format("REENTERING:~p~n",[Agent_Id]),
+					[S] = mnesia:read({specie,Specie_Id}),
+					SHOF = S#specie.hall_of_fame,
+					U_SHOF = lists:keydelete(Agent_Id, 3, SHOF),
+					U_S = S#specie{hall_of_fame=U_SHOF},
+					%U_S = S#specie{hall_of_fame=U_SHOF,agent_ids=[Agent_Id|S#specie.agent_ids]},
+					[A] = mnesia:read({agent,Agent_Id}),
+					U_A = A#agent{champion_flag=[rentered|A#agent.champion_flag]},%true, false, lost, rentered
+					mnesia:write(U_S),
+					mnesia:write(U_A),
+					reenter(ReentryIds,Specie_Id);
+					%Remove agent from phof and shof, tag re-entry (not lost)
+				reenter([],_Specie_Id)->
+					ok.
+				
+			choose_Winner(Specie_Id,[{_PortionSize,Agent_Id}],_Index,_Acc)->
+				case random:uniform() =< ?REENTRY_PROBABILITY of
 					true ->
-						false;
+						{Agent_Id,reentry};
 					false ->
-						compare_profilesf(TopProfiles,{Fitness,TotN})
+						[A] = mnesia:read({agent,Agent_Id}),
+						OffspringAgent_Id = create_MutantAgentCopy(Agent_Id),
+						U_A = A#agent{offspring_ids=[OffspringAgent_Id|A#agent.offspring_ids]},%true, false, lost, rentered
+						mnesia:write(U_A),
+						[OffspringA] = mnesia:read({agent,OffspringAgent_Id}),
+						U_OffspringA = OffspringA#agent{champion_flag=[false|OffspringA#agent.champion_flag]},
+						mnesia:write(U_OffspringA),
+						{OffspringAgent_Id,offspring}
+						%choose agent as parent
+						%create clone, mutate clone, return offspring
 				end;
-			compare_profilesf([],_ProfileP)->
-				true.
-
-	calculate_alotments([{Fitness,TotNeurons,Agent_Id}|Sorted_AgentSummaries],NeuralEnergyCost,Acc,NewPopAcc)->
-		NeuralAlotment = Fitness/NeuralEnergyCost,
-		MutantAlotment = NeuralAlotment/TotNeurons,
-		U_NewPopAcc = NewPopAcc+MutantAlotment,
-		calculate_alotments(Sorted_AgentSummaries,NeuralEnergyCost,[{MutantAlotment,Fitness,TotNeurons,Agent_Id}|Acc],U_NewPopAcc);
-	calculate_alotments([],_NeuralEnergyCost,Acc,NewPopAcc)->
-		%io:format("NewPopAcc:~p~n",[NewPopAcc]),
-		{Acc,NewPopAcc}.
-%The calculate_alotments/4 function accepts the AgentSummaries list and for each agent, using the NeuralEnergyCost, calcualtes how many offspring that agent can produce by using the agent's Fitness, TotNEurons, and NeuralEnergyCost values. The function first calculates how many neurons the agent is alloted, based on the agent's fitness and the cost of each neuron (which itself was calculated based on the average performance of the population). From the number of neurons alloted to the agent, the function then calculates how many offspring the agent should be alloted, by deviding the agent's NN size by the number of neurons it is alloted. The function also keeps track of how many offspring will be created from all these agents in general, by adding up all the offspring alotements. The calcualte_alotments/4 function does this for each tuple in the AgentSummaries, and then returns the calculated alotment list and NewPopAcc to the caller.
-
-	gather_survivors([{MutantAlotment,Fitness,TotNeurons,Agent_Id}|AlotmentsP],Normalizer,Acc)->
-		Normalized_MutantAlotment = round(MutantAlotment/Normalizer),
-		io:format("Agent_Id:~p Normalized_MutantAlotment:~p~n",[Agent_Id,Normalized_MutantAlotment]),
-		SurvivingAgent_Ids = case Normalized_MutantAlotment >= 1 of
-			true ->
-				MutantAgent_Ids = case Normalized_MutantAlotment >= 2 of
-					true ->
-						[population_monitor:create_MutantAgentCopy(Agent_Id)|| _ <-lists:seq(1,Normalized_MutantAlotment-1)];
+			choose_Winner(Specie_Id,[{PortionSize,Agent_Id}|Allotments],Index,Acc)->
+				%io:format("Index:~p~n",[Index]),
+				case (Index > Acc) and (Index =< Acc+PortionSize) of
+					true ->%io:format("WIndex:~p~n",[Index]),
+						case random:uniform() =< ?REENTRY_PROBABILITY of
+							true ->
+								{Agent_Id,reentry};
+							false ->
+								[A] = mnesia:read({agent,Agent_Id}),
+								OffspringAgent_Id = create_MutantAgentCopy(Agent_Id),
+								U_A = A#agent{offspring_ids=[OffspringAgent_Id|A#agent.offspring_ids]},%true, false, lost, rentered
+								mnesia:write(U_A),
+								[OffspringA] = mnesia:read({agent,OffspringAgent_Id}),
+								U_OffspringA = OffspringA#agent{champion_flag=[false|OffspringA#agent.champion_flag]},
+								mnesia:write(U_OffspringA),
+								{OffspringAgent_Id,offspring}
+								%choose agent as parent
+								%create clone, mutate clone, return offspring
+						end;
 					false ->
-						[]
-				end,
-				[Agent_Id|MutantAgent_Ids];
-			false ->
-				io:format("Deleting agent:~p~n",[Agent_Id]),
-				genotype:delete_Agent(Agent_Id),
-				[]
-		end,
-		gather_survivors(AlotmentsP,Normalizer,lists:append(SurvivingAgent_Ids,Acc));
-	gather_survivors([],_Normalizer,Acc)->
-		io:format("New Population:~p PopSize:~p~n",[Acc,length(Acc)]),
-		Acc.
-%The gather_survivors/3 function accepts the list composed of the alotment tuples and a population normalizer value calculated by the competition/3 function, and from those values calculates the actual number of offspring that each agent should produce, creating those mutant offspring and accumulating the new generation agent ids. FOr each Agent_Id the function first calculates the noramlized offspring alotment value, to ensure that the final nubmer of agents in the specie is within the popualtion limit of that specie. If the offspring alotment value is less than 0, the agent is killed. If the offspring alotment is 1, the parent agent is allowed to survive to the next generation, but is not allowed to create any new offspring. If the offspring alotment is greater than one, then the Normalized_MutantAlotment-1 offspring are created from this fit agent, by calling upon the create_MutantAgentCopy/1 function, which rerns the id of the new mutant offspring. Once all the offspring have been created, the function returns to the caller a list of ids, composed of the surviving parent agent ids, and their offspring.
-
-top3(ProperlySorted_AgentSummaries,NeuralEnergyCost,PopulationLimit)->
-	TotSurvivors = 3,
-	Valid_AgentSummaries = lists:sublist(ProperlySorted_AgentSummaries,TotSurvivors),
-	Invalid_AgentSummaries = ProperlySorted_AgentSummaries -- Valid_AgentSummaries,
-	{_,_,Invalid_AgentIds} = lists:unzip3(Invalid_AgentSummaries),
-	{_,_,Valid_AgentIds} = lists:unzip3(Valid_AgentSummaries),
-	[genotype:delete_Agent(Agent_Id) || Agent_Id <- Invalid_AgentIds],
-	io:format("Valid_AgentSummaries:~p~n",[Valid_AgentSummaries]),
-	io:format("Invalid_AgentSummaries:~p~n",[Invalid_AgentSummaries]),
-	TopAgentSummaries = lists:sublist(Valid_AgentSummaries,3),
-	{_TopFitnessList,_TopTotNs,TopAgent_Ids} = lists:unzip3(TopAgentSummaries),
-	io:format("NeuralEnergyCost:~p~n",[NeuralEnergyCost]),
-	NewGenAgent_Ids = breed(Valid_AgentIds,PopulationLimit-TotSurvivors,[]),
-	{NewGenAgent_Ids,TopAgent_Ids}.
+						choose_Winner(Specie_Id,Allotments,Index,Acc+PortionSize)
+				end.
 		
-	breed(_Valid_AgentIds,0,Acc)->
-		Acc;
-	breed(Valid_AgentIds,OffspringIndex,Acc)->%TODO
-		Parent_AgentId = lists:nth(random:uniform(length(Valid_AgentIds)),Valid_AgentIds),
-		MutantAgent_Id = population_monitor:create_MutantAgentCopy(Parent_AgentId),
-		breed(Valid_AgentIds,OffspringIndex-1,[MutantAgent_Id|Acc]).
-%The breed/3 function is part of a very simple selection algorithm, which just selects the top 3 most fit agents, and then uses the create_MutantAgentCopy/1 function to create their offspring.
+		construct_AgentSummaries([Agent_Id|Agent_Ids],Acc)->
+			A = genotype:dirty_read({agent,Agent_Id}),
+			construct_AgentSummaries(Agent_Ids,[{A#agent.fitness,length((genotype:dirty_read({cortex,A#agent.cx_id}))#cortex.neuron_ids),Agent_Id}|Acc]);
+		construct_AgentSummaries([],Acc)->
+			Acc.
+%The construct_AgentSummaries/2 reads the agents in the Agent_Ids list, and composes a list of tuples of the following format: [{AgentFitness,AgentTotNeurons,Agent_Id}...]. This list of tuples is reffered to as AgentSummaries. Once the AgentSummaries list is composed, it is returned to the caller.
 
-competition(ProperlySorted_AgentSummaries)->
-	TotEnergy = lists:sum([Fitness || {Fitness,_TotN,_Agent_Id}<-ProperlySorted_AgentSummaries]),
-	TotNeurons = lists:sum([TotN || {_Fitness,TotN,_Agent_Id} <- ProperlySorted_AgentSummaries]),
-	NeuralEnergyCost = TotEnergy/TotNeurons,
-	{AlotmentsP,Normalizer} = calculate_alotments(ProperlySorted_AgentSummaries,NeuralEnergyCost,[],0),
-	Choice = random:uniform(),
-	{WinnerFitness,WinnerTotN,WinnerAgent_Id}=choose_CompetitionWinner(AlotmentsP,Normalizer,Choice,0),
-	{WinnerFitness,WinnerTotN,WinnerAgent_Id}.
-		
-	choose_CompetitionWinner([{MutantAlotment,Fitness,TotN,Agent_Id}|AlotmentsP],Normalizer,Choice,Range_From)->
-		Range_To = Range_From+MutantAlotment/Normalizer,
-		case (Choice >= Range_From) and (Choice =< Range_To) of
-			true ->
-				{Fitness,TotN,Agent_Id};
-			false ->
-				choose_CompetitionWinner(AlotmentsP,Normalizer,Choice,Range_To)
-		end;
-	choose_CompetitionWinner([],_Normalizer,_Choice,_Range_From)->
-		exit("********ERROR:choose_CompetitionWinner:: reached [] without selecting a winner.").
+	create_MutantAgentCopy(Agent_Id)->
+		AgentClone_Id = genotype:clone_Agent(Agent_Id),
+		io:format("AgentClone_Id:~p~n",[AgentClone_Id]),
+		genome_mutator:mutate(AgentClone_Id),
+		AgentClone_Id.
+%The create_MutantAgentCopy/1 first creates a clone of the Agent_Id, and then uses the genome_mutator:mutate/1 function to mutate that clone, returning the id of the cloned agent to the caller.
+				
+	create_MutantAgentCopy(Agent_Id,safe)->%TODO
+		A = genotype:dirty_read({agent,Agent_Id}),
+		S = genotype:dirty_read({specie,A#agent.specie_id}),
+		AgentClone_Id = genotype:clone_Agent(Agent_Id),
+		Agent_Ids = S#specie.agent_ids,
+		genotype:write(S#specie{agent_ids = [AgentClone_Id|Agent_Ids]}),
+		io:format("AgentClone_Id:~p~n",[AgentClone_Id]),
+		genome_mutator:mutate(AgentClone_Id),
+		AgentClone_Id.
+%The create_MutantAgentCopy/2 is similar to arity 1 function of the same name, but it also adds the id of the cloned mutant agent to the specie record to which the original belonged. The specie with its updated agent_ids is then written to database, and the id of the mutant clone is returned to the caller.
+
+choose_CompetitionWinner([{_MutantAlotment,Fitness,Profile,Agent_Id}],_Index,_Acc)->%TODO: Does this really work?
+	{Fitness,Profile,Agent_Id};
+choose_CompetitionWinner([{MutantAlotment,Fitness,Profile,Agent_Id}|AlotmentsP],Index,Acc)->
+	case (Index > Acc) and (Index =< Acc+MutantAlotment) of
+		true ->
+			{Fitness,Profile,Agent_Id};
+		false ->
+			choose_CompetitionWinner(AlotmentsP,Index,Acc+MutantAlotment)
+	end.

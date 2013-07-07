@@ -89,7 +89,7 @@ construct_Cortex(Agent_Id,Generation,SpecCon,Encoding_Type,SPlasticity,SLinkform
 			%N_Ids=construct_InitialNeuroLayer(Cx_Id,Generation,SpecCon,Substrate_CPPs,Substrate_CEPs,[],[]),
 			[write(Substrate_CPP) || Substrate_CPP <- Substrate_CPPs],
 			[write(Substrate_CEP) || Substrate_CEP <- Substrate_CEPs],
-			{N_Ids,Pattern} = construct_SeedNN(Cx_Id,Generation,SpecCon,Sensors,Actuators),
+			{N_Ids,Pattern} = construct_SeedNN(Cx_Id,Generation,SpecCon,Substrate_CPPs,Substrate_CEPs),
 			%io:format("Sensors:~p~n Actuators:~p~n Substate_CPPs:~p~n Substrate_CEPs:~p~n",[Sensors,Actuators,Substrate_CPPs,Substrate_CEPs]),
 			S_Ids = [S#sensor.id || S<-Sensors],
 			A_Ids = [A#actuator.id || A<-Actuators],
@@ -197,7 +197,7 @@ construct_SeedNN(Cx_Id,Generation,SpecCon,Sensors,Actuators)->
 				create_NeuralWeightsP(_PFName,0,Acc) ->
 					Acc; 
 				create_NeuralWeightsP(PFName,Index,Acc) ->
-					W = random:uniform()/2, 
+					W = random:uniform()-0.5, 
 					create_NeuralWeightsP(PFName,Index-1,[{W,plasticity:PFName(weight_parameters)}|Acc]). 
 %Each neuron record is composed by the construct_Neuron/6 function. The construct_Neuron/6 creates the Input list from the tuples [{Id,Weights}...] using the vector lengths specified in the Input_Specs list. The create_InputIdPs/3 function uses create_NeuralWeightsP/2 to generate a tuple list with random weights in the range of -0.5 to 0.5, and plasticity parameters dependent on the PF function. The activation function that the neuron uses is chosen randomly from the neural_afs list within the constraint record passed to the construct_Neuron/6 function. construct_Neuron uses calculate_ROIds/3 to extract the list of recursive connection ids from the Output_Ids passed to it. Once the neuron record is filled in, it is saved to the database.
 		
@@ -352,7 +352,7 @@ update_NNTopologySummary(Agent_Id)->
 			log ->{TotTanh,TotSin,TotCos,TotGaussian,TotAbsolute,TotSgn,TotLog+1,TotSqrt,TotLin};
 			sqrt ->{TotTanh,TotSin,TotCos,TotGaussian,TotAbsolute,TotSgn,TotLog,TotSqrt+1,TotLin};
 			linear ->{TotTanh,TotSin,TotCos,TotGaussian,TotAbsolute,TotSgn,TotLog,TotSqrt,TotLin+1};
-			Other -> io:format("Unknown AF, please update AF_Distribution tuple with:~p~n.",[Other])
+			Other -> exit("Unknown AF, please update AF_Distribution tuple with:~p~n.",[Other])
 		end,
 		get_NodeSummary(N_Ids,IL_Count+ILAcc,OL_Count+OLAcc,RO_Count+ROAcc,U_FunctionDistribution);
 	get_NodeSummary([],ILAcc,OLAcc,ROAcc,FunctionDistribution)->
@@ -472,6 +472,7 @@ clone_Agent(Agent_Id,CloneAgent_Id)->
 				write(A#agent{
 					id = CloneAgent_Id,
 					cx_id = CloneCx_Id,
+					offspring_ids = [],
 					evo_hist = U_EvoHist
 				});
 			Substrate_Id ->
@@ -504,7 +505,8 @@ clone_Agent(Agent_Id,CloneAgent_Id)->
 					id = CloneAgent_Id,
 					cx_id = CloneCx_Id,
 					substrate_id = CloneSubstrate_Id,
-					evo_hist = U_EvoHist
+					evo_hist = U_EvoHist,
+					offspring_ids=[]
 				})
 		end,
 		ets:delete(IdsNCloneIds)
@@ -642,7 +644,7 @@ create_test()->
 	Specie_Id = test,
 	Agent_Id = test,
 	%SpecCon = #constraint{},
-	SpecCon = #constraint{morphology=forex_trader,connection_architecture=recurrent, population_evo_alg_f=generational,neural_afs=[tanh],agent_encoding_types=[neural],substrate_plasticities=[none],neural_pfns=[neuromodulation]},
+	SpecCon = #constraint{morphology=forex_trader,connection_architecture=recurrent, population_evo_alg_f=generational,neural_afs=[tanh],agent_encoding_types=[substrate],substrate_plasticities=[none],neural_pfns=[none]},
 	F = fun()->
 		case genotype:read({agent,test}) of
 			undefined ->
