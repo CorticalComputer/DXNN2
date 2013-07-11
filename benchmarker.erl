@@ -360,7 +360,7 @@ write_Graphs([G|Graphs],Graph_Postfix)->
 	io:format(File,"~n~n~n#Specie-Population Turnover Vs Evaluations, Morphology:~p~n",[Morphology]),
 	lists:foreach(fun({X,Y}) -> io:format(File, "~p ~p~n",[X,Y]) end, lists:zip(U_G#graph.evaluation_Index,U_G#graph.evaluations)),
 	
-	[io:format("{~p,~p,~p}~n",[A,B,C])||{A,B,C}<-lists:zip3(U_G#graph.evaluation_Index,U_G#graph.validation_fitness,U_G#graph.validation_fitness_std)],
+	%[io:format("{~p,~p,~p}~n",[A,B,C])||{A,B,C}<-lists:zip3(U_G#graph.evaluation_Index,U_G#graph.validation_fitness,U_G#graph.validation_fitness_std)],
 	io:format(File,"~n~n#Validation Avg Fitness Vs Evaluations, Morphology:~p~n",[Morphology]),
 	%lists:foreach(fun({X,Y}) -> io:format(File, "~p ~p~n",[X,Y]) end, lists:zip(U_G#graph.evaluation_Index,U_G#graph.validation_fitness)),
 	%lists:foreach(fun({X,[Y],[Std]}) -> io:format(File, "~p ~p ~p~n",[X,Y,Std]) end, lists:zip3(U_G#graph.evaluation_Index,U_G#graph.validation_fitness,U_G#graph.validation_fitness_std)),
