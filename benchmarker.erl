@@ -23,7 +23,7 @@
 -include("records.hrl").
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Benchmark Options %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 -define(DIR,"benchmarks/").
--define(INIT_CONSTRAINTS,[#constraint{morphology=Morphology,connection_architecture=CA, population_selection_f=hof_competition,population_evo_alg_f=generational, neural_pfns=[none], agent_encoding_types=[substrate], neural_afs=[tanh,cos,gaussian,linear,absolute], tuning_selection_fs=[dynamic_random]} || Morphology<-[forex_trader], CA<-[feedforward]]).
+-define(INIT_CONSTRAINTS,[#constraint{morphology=Morphology,connection_architecture=CA, population_selection_f=hof_competition,population_evo_alg_f=generational, neural_pfns=[none], agent_encoding_types=[neural], neural_afs=[tanh,cos,gaussian,linear,absolute], tuning_selection_fs=[dynamic_random]} || Morphology<-[forex_trader], CA<-[feedforward]]).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %Starts and ends Neural Networks with various preset parameters and options, and polls the logger for information about each run.		
 get_ekeys()->
@@ -47,8 +47,8 @@ start(Id)->
 		specie_size_limit=10,
 		init_specie_size=20,
 		polis_id = mathema,
-		generation_limit = inf,
-		evaluations_limit = inf,
+		generation_limit = 1000,
+		evaluations_limit = 10000,
 		fitness_goal = inf
 	},
 	E=#experiment{
@@ -58,7 +58,7 @@ start(Id)->
 		init_constraints=?INIT_CONSTRAINTS,
 		progress_flag=in_progress,
 		run_index=1,
-		tot_runs=1000,
+		tot_runs=10,
 		started={date(),time()},
 		interruptions=[]
 	},
@@ -111,14 +111,14 @@ loop(E,P_Id)->
 						true ->
 							io:format("E:~p~n",[U_E]),
 							Traces = E#experiment.trace_acc,
-							BestGen_Champions = [get_best(Trace) || Trace <- Traces],
-							io:format("BestGen_Champions:~p~n",[BestGen_Champions]),
-							[{BOTB_F,BOTB_Id}|_] = lists:reverse(lists:sort(BestGen_Champions)),
-							io:format("BOTB:~p~n",[{BOTB_F,BOTB_Id}]),
-							BestGen_PIdPs=[{exoself:start(ExoselfId,self(),test),ExoselfId} || {GenFitness,ExoselfId} <- BestGen_Champions],
-							BestGen_Results=receive_TestAcks(BestGen_PIdPs,[]),
-							BestGen_Avg = get_avg(BestGen_Results,[]),
-							io:format("BOTB TEST RESULTS:~p~n",[lists:keyfind(BOTB_Id,1,BestGen_Results)]),
+							BestGen_Champions = lists:reverse(lists:sort([get_best(Trace) || Trace <- Traces])),
+							io:format("Validation Champions:~p~n",[BestGen_Champions]),
+							%[{BOTB_F,BOTB_Id}|_] = lists:reverse(lists:sort(BestGen_Champions)),
+							%io:format("BOTB:~p~n",[{BOTB_F,BOTB_Id}]),
+%							BestGen_PIdPs=[{exoself:start(ExoselfId,self(),test),ExoselfId} || {GenFitness,ExoselfId} <- BestGen_Champions],
+%							BestGen_Results=receive_TestAcks(BestGen_PIdPs,[]),
+%							BestGen_Avg = get_avg(BestGen_Results,[]),
+%							io:format("Test results of Validation Champions:~p~n",[lists:keyfind(BOTB_Id,1,BestGen_Results)]),
 							io:format("************************");
 						false ->
 							ok
@@ -360,10 +360,12 @@ write_Graphs([G|Graphs],Graph_Postfix)->
 	io:format(File,"~n~n~n#Specie-Population Turnover Vs Evaluations, Morphology:~p~n",[Morphology]),
 	lists:foreach(fun({X,Y}) -> io:format(File, "~p ~p~n",[X,Y]) end, lists:zip(U_G#graph.evaluation_Index,U_G#graph.evaluations)),
 	
+	[io:format("{~p,~p,~p}~n",[A,B,C])||{A,B,C}<-lists:zip3(U_G#graph.evaluation_Index,U_G#graph.validation_fitness,U_G#graph.validation_fitness_std)],
 	io:format(File,"~n~n#Validation Avg Fitness Vs Evaluations, Morphology:~p~n",[Morphology]),
 	%lists:foreach(fun({X,Y}) -> io:format(File, "~p ~p~n",[X,Y]) end, lists:zip(U_G#graph.evaluation_Index,U_G#graph.validation_fitness)),
-	lists:foreach(fun({X,[Y],[Std]}) -> io:format(File, "~p ~p ~p~n",[X,Y,Std]) end, lists:zip3(U_G#graph.evaluation_Index,U_G#graph.validation_fitness,U_G#graph.validation_fitness_std)),
-	%print_MultiObjectiveFitness(File,U_G#graph.evaluation_Index,U_G#graph.validation_fitness),
+	%lists:foreach(fun({X,[Y],[Std]}) -> io:format(File, "~p ~p ~p~n",[X,Y,Std]) end, lists:zip3(U_G#graph.evaluation_Index,U_G#graph.validation_fitness,U_G#graph.validation_fitness_std)),
+	%[io:format(File, "~p ~p ~p~n",[X,Y,Std])|| {X,Y1,Std1} <- lists:zip3(U_G#graph.evaluation_Index,U_G#graph.validation_fitness,U_G#graph.validation_fitness_std),[Y]=Y1,[Std]=Std1],
+	print_MultiObjectiveFitness(File,U_G#graph.evaluation_Index,U_G#graph.validation_fitness,U_G#graph.validation_fitness_std),
 	
 	io:format(File,"~n~n~n#Validation Max Fitness Vs Evaluations, Morphology:~p",[Morphology]),
 	%lists:foreach(fun({X,Y}) -> io:format(File, "~p ~p~n",[X,Y]) end, lists:zip(U_G#graph.evaluation_Index,U_G#graph.validationmax_fitness)),
