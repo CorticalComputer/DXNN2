@@ -344,16 +344,16 @@ write_Graphs([G|Graphs],Graph_Postfix)->
 	%lists:foreach(fun({X,Y}) -> io:format(File, "~p ~p~n",[X,Y]) end, lists:zip(U_G#graph.evaluation_Index,U_G#graph.max_fitness)),
 	print_MultiObjectiveFitness(File,U_G#graph.evaluation_Index,U_G#graph.max_fitness),
 
-	io:format(File,"~n~n#Avg. Max Fitness Vs Evaluations, Morphology:~p",[Morphology]),
+	io:format(File,"~n~n~n#Avg. Max Fitness Vs Evaluations, Morphology:~p",[Morphology]),
 	%lists:foreach(fun({X,Y}) -> io:format(File, "~p ~p~n",[X,Y]) end, lists:zip(U_G#graph.evaluation_Index,U_G#graph.max_fitness)),
 	print_MultiObjectiveFitness(File,U_G#graph.evaluation_Index,U_G#graph.maxavg_fitness),
 
-	io:format(File,"~n~n#Avg. Max Fitness Vs Evaluations, Morphology:~p~n",[Morphology]),
+	io:format(File,"~n~n~n#Avg. Max Fitness Vs Evaluations, Morphology:~p",[Morphology]),
 	%lists:foreach(fun({X,Y}) -> io:format(File, "~p ~p~n",[X,Y]) end, lists:zip(U_G#graph.evaluation_Index,U_G#graph.max_fitness)),
 	%print_MultiObjectiveFitness(File,U_G#graph.evaluation_Index,U_G#graph.maxavg_fitness),
 	lists:foreach(fun({X,[Y],[Std]}) -> io:format(File, "~p ~p ~p~n",[X,Y,Std]) end, lists:zip3(U_G#graph.evaluation_Index,U_G#graph.maxavg_fitness,U_G#graph.maxavg_fitness_std)),
 	
-	io:format(File,"~n~n~n#Avg. Min Fitness Vs Evaluations, Morphology:~p",[Morphology]),
+	io:format(File,"~n~n#Avg. Min Fitness Vs Evaluations, Morphology:~p",[Morphology]),
 	%lists:foreach(fun({X,Y}) -> io:format(File, "~p ~p~n",[X,Y]) end, lists:zip(U_G#graph.evaluation_Index,U_G#graph.min_fitness)),
 	print_MultiObjectiveFitness(File,U_G#graph.evaluation_Index,U_G#graph.min_fitness),
 	
@@ -361,7 +361,7 @@ write_Graphs([G|Graphs],Graph_Postfix)->
 	lists:foreach(fun({X,Y}) -> io:format(File, "~p ~p~n",[X,Y]) end, lists:zip(U_G#graph.evaluation_Index,U_G#graph.evaluations)),
 	
 	%[io:format("{~p,~p,~p}~n",[A,B,C])||{A,B,C}<-lists:zip3(U_G#graph.evaluation_Index,U_G#graph.validation_fitness,U_G#graph.validation_fitness_std)],
-	io:format(File,"~n~n#Validation Avg Fitness Vs Evaluations, Morphology:~p~n",[Morphology]),
+	io:format(File,"~n~n#Validation Avg Fitness Vs Evaluations, Morphology:~p",[Morphology]),
 	%lists:foreach(fun({X,Y}) -> io:format(File, "~p ~p~n",[X,Y]) end, lists:zip(U_G#graph.evaluation_Index,U_G#graph.validation_fitness)),
 	%lists:foreach(fun({X,[Y],[Std]}) -> io:format(File, "~p ~p ~p~n",[X,Y,Std]) end, lists:zip3(U_G#graph.evaluation_Index,U_G#graph.validation_fitness,U_G#graph.validation_fitness_std)),
 	%[io:format(File, "~p ~p ~p~n",[X,Y,Std])|| {X,Y1,Std1} <- lists:zip3(U_G#graph.evaluation_Index,U_G#graph.validation_fitness,U_G#graph.validation_fitness_std),[Y]=Y1,[Std]=Std1],
