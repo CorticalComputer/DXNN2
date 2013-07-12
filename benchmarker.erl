@@ -23,7 +23,7 @@
 -include("records.hrl").
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Benchmark Options %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 -define(DIR,"benchmarks/").
--define(INIT_CONSTRAINTS,[#constraint{morphology=Morphology,connection_architecture=CA, population_selection_f=hof_competition,population_evo_alg_f=generational, neural_pfns=[none], agent_encoding_types=[neural], neural_afs=[tanh,cos,gaussian,linear,absolute], tuning_selection_fs=[dynamic_random]} || Morphology<-[forex_trader], CA<-[feedforward]]).
+-define(INIT_CONSTRAINTS,[#constraint{morphology=Morphology,connection_architecture=CA, population_selection_f=hof_competition,population_evo_alg_f=generational, neural_pfns=[none], agent_encoding_types=[neural], neural_afs=[tanh,cos,gaussian,linear,absolute], tuning_selection_fs=[dynamic_random]} || Morphology<-[forex_trader], CA<-[recurrent]]).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %Starts and ends Neural Networks with various preset parameters and options, and polls the logger for information about each run.		
 get_ekeys()->
@@ -112,14 +112,14 @@ loop(E,P_Id)->
 							io:format("E:~p~n",[U_E]),
 							Traces = E#experiment.trace_acc,
 							BestGen_Champions = lists:reverse(lists:sort([get_best(Trace) || Trace <- Traces])),
-							io:format("Validation Champions:~p~n",[BestGen_Champions]),
+							io:format("Validation Champions {ValFitness,TestFitness}:~p~n",[BestGen_Champions]),
 							%[{BOTB_F,BOTB_Id}|_] = lists:reverse(lists:sort(BestGen_Champions)),
 							%io:format("BOTB:~p~n",[{BOTB_F,BOTB_Id}]),
 %							BestGen_PIdPs=[{exoself:start(ExoselfId,self(),test),ExoselfId} || {GenFitness,ExoselfId} <- BestGen_Champions],
 %							BestGen_Results=receive_TestAcks(BestGen_PIdPs,[]),
 %							BestGen_Avg = get_avg(BestGen_Results,[]),
 %							io:format("Test results of Validation Champions:~p~n",[lists:keyfind(BOTB_Id,1,BestGen_Results)]),
-							io:format("************************");
+							io:format("************************~n");
 						false ->
 							ok
 					end;
@@ -150,7 +150,7 @@ loop(E,P_Id)->
 	
 	get_best(T)->
 		Stats = T#trace.stats,
-		GenTest_Champions=[Stat#stat.validation_fitness || [Stat] <- Stats],
+		GenTest_Champions=[{Stat#stat.validation_fitness,Stat#stat.test_fitness} || [Stat] <- Stats],
 		[Best|_]=lists:reverse(lists:sort(GenTest_Champions)),
 		Best.
 	
@@ -381,8 +381,13 @@ write_Graphs([],_Graph_Postfix)->
 	ok.
 	
 	print_MultiObjectiveFitness(File,[I|Index],[F|Fitness],[Std|StandardDiviation])->
-		io:format(File,"~n~p",[I]),
-		print_FitnessAndStd(File,F,Std),
+		case (F==[]) or (Std==[]) of
+			true ->
+				ok;
+			false ->
+				io:format(File,"~n~p",[I]),
+				print_FitnessAndStd(File,F,Std)
+		end,
 		print_MultiObjectiveFitness(File,Index,Fitness,StandardDiviation);
 	print_MultiObjectiveFitness(_File,[],[],[])->
 		ok.
@@ -394,8 +399,13 @@ write_Graphs([],_Graph_Postfix)->
 			ok.
 		
 	print_MultiObjectiveFitness(File,[I|Index],[F|Fitness])->
-		io:format(File,"~n~p",[I]),
-		[io:format(File," ~p",[FE])||FE<-F],
+		case F == [] of
+			true ->
+				ok;
+			false ->
+				io:format(File,"~n~p",[I]),
+				[io:format(File," ~p",[FE])||FE<-F]
+		end,
 		print_MultiObjectiveFitness(File,Index,Fitness);
 	print_MultiObjectiveFitness(_File,[],[])->
 		ok.

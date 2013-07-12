@@ -990,7 +990,7 @@ gather_STATS(Population_Id,EvaluationsAcc,OpMode)->
 		{Avg_Neurons,Neurons_Std} = calculate_SpecieAvgNodes({specie,S}),
 		{AvgFitness,Fitness_Std,MaxFitness,MinFitness} = calculate_SpecieFitness({specie,S}),
 		SpecieDiversity = calculate_SpecieDiversity({specie,S}),
-		
+		{ValFitness,TestFitness,Champion_Id}=validation_testing(Specie_Id,OpModes),
 		STAT = #stat{
 			morphology = (S#specie.constraint)#constraint.morphology,
 			specie_id = Specie_Id,
@@ -1003,7 +1003,8 @@ gather_STATS(Population_Id,EvaluationsAcc,OpMode)->
 			avg_diversity=SpecieDiversity,
 			evaluations = Specie_Evaluations,
 			time_stamp=TimeStamp,
-			validation_fitness = validation_testing(Specie_Id,OpModes)
+			validation_fitness = {ValFitness,Champion_Id},
+			test_fitness = {TestFitness,Champion_Id}
 		},
 		STATS = S#specie.stats,
 		U_STATS = [STAT|STATS],
@@ -1027,19 +1028,27 @@ gather_STATS(Population_Id,EvaluationsAcc,OpMode)->
 					end,
 					case Champion_Id of
 						void ->
-							{[],void};
+							{[],[],void};
 						_ ->
 							%{ok,Champion_PId}= exoself:start_link({validation,Champion_Id,1,self()}),
-							Champion_PId=exoself:start(Champion_Id,self(),validation),
+							ValChampion_PId=exoself:start(Champion_Id,self(),validation),
 							receive
 								%{Champion_Id,ValFitness,FitnessProfile}->
-								{Champion_PId,validation_complete,Specie_Id,ValFitness,Cycles,Time}->
+								{ValChampion_Id,validation_complete,Specie_Id,ValFitness,ValCycles,ValTime}->
 									%io:format("Got Validation results:~p~n",[{Champion_Id,validation_complete,Specie_Id,ValFitness,Cycles,Time}]),
 									{ValFitness,Champion_Id}
-							end
+							end,
+							TestChampion_PId=exoself:start(Champion_Id,self(),test),
+							receive
+								%{Champion_Id,ValFitness,FitnessProfile}->
+								{TestChampion_Id,test_complete,Specie_Id,TestFitness,TestCycles,TestTime}->
+									%io:format("Got Validation results:~p~n",[{Champion_Id,validation_complete,Specie_Id,ValFitness,Cycles,Time}]),
+									{TestFitness,Champion_Id}
+							end,
+							{ValFitness,TestFitness,Champion_Id}
 					end;
 				false ->
-					{0,void}
+					{0,0,void}
 			end.
 
 calculate_SpecieAvgNodes({specie,S})->

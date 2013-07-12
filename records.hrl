@@ -35,7 +35,7 @@
 -record(specie,{id, population_id, fingerprint, constraint, agent_ids=[], dead_pool=[], champion_ids=[], fitness, innovation_factor={0,0},stats=[], seed_agent_ids=[], hof_distinguishers=[tot_n], specie_distinguishers=[tot_n], hall_of_fame=[]}).
 -record(trace,{stats=[],tot_evaluations=0,step_size=500}).
 -record(population,{id, polis_id, specie_ids=[], morphologies=[], innovation_factor, evo_alg_f, fitness_postprocessor_f, selection_f, trace=#trace{}, seed_agent_ids=[],seed_specie_ids=[]}).
--record(stat,{morphology,specie_id,avg_neurons,std_neurons,avg_fitness,std_fitness,max_fitness,min_fitness,validation_fitness,avg_diversity,evaluations,time_stamp}).
+-record(stat,{morphology,specie_id,avg_neurons,std_neurons,avg_fitness,std_fitness,max_fitness,min_fitness,validation_fitness,test_fitness,avg_diversity,evaluations,time_stamp}).
 -record(topology_summary,{type,tot_neurons,tot_n_ils,tot_n_ols,tot_n_ros,af_distribution}).
 
 -record(constraint,{
