@@ -167,7 +167,7 @@ test(ExperimentName)->
 	
 	get_best(T)->
 		Stats = T#trace.stats,
-		GenTest_Champions=[Stat#stat.gentest_fitness || [Stat] <- Stats],
+		GenTest_Champions=[Stat#stat.validation_fitness || [Stat] <- Stats],
 		[Best|_]=lists:reverse(lists:sort(GenTest_Champions)),
 		Best.
 	
