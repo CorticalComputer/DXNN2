@@ -384,9 +384,12 @@ delete(TnK)->
 	F = fun()->
 		mnesia:delete(TnK)
 	end,
-	mnesia:transaction(F). 
+	mnesia:transaction(F).
 %read/1 accepts the tuple composed of a table name and a key: {TableName,Key}, which it then uses to read from the mnesia database and return the record to the caller. write/1 accepts a record and writes it to the database. delete/1 accepts a the tuple {TableName,Key}, and deletes the associated record from the table.
-	
+
+dirty_delete(TnK)->
+	mnesia:dirty_delete(TnK).
+
 print(Agent_Id)->
 	F = fun()->
 		A = read({agent,Agent_Id}),
@@ -410,31 +413,31 @@ print(Agent_Id)->
 %print/1 accepts an agent's id, and prints out the complete genotype of that agent.
 
 delete_Agent(Agent_Id)->
-	A = read({agent,Agent_Id}),
-	Cx = read({cortex,A#agent.cx_id}),
-	[delete({neuron,Id}) || Id <- Cx#cortex.neuron_ids],
-	[delete({sensor,Id}) || Id <- Cx#cortex.sensor_ids],
-	[delete({actuator,Id}) || Id <- Cx#cortex.actuator_ids],
-	delete({cortex,A#agent.cx_id}),
-	delete({agent,Agent_Id}),
+	[A] = mnesia:read({agent,Agent_Id}),
+	[Cx] = mnesia:read({cortex,A#agent.cx_id}),
+	[mnesia:delete({neuron,Id}) || Id <- Cx#cortex.neuron_ids],
+	[mnesia:delete({sensor,Id}) || Id <- Cx#cortex.sensor_ids],
+	[mnesia:delete({actuator,Id}) || Id <- Cx#cortex.actuator_ids],
+	mnesia:delete({cortex,A#agent.cx_id}),
+	mnesia:delete({agent,Agent_Id}),
 	case A#agent.substrate_id of
 		undefined ->
 			ok;
 		Substrate_Id ->
-			Substrate = read({substrate,Substrate_Id}),
-			[delete({sensor,Id}) || Id <- Substrate#substrate.cpp_ids],
-			[delete({actuator,Id})|| Id <- Substrate#substrate.cep_ids],
-			delete({substrate,Substrate_Id})
+			[Substrate] = mnesia:read({substrate,Substrate_Id}),
+			[mnesia:delete({sensor,Id}) || Id <- Substrate#substrate.cpp_ids],
+			[mnesia:delete({actuator,Id})|| Id <- Substrate#substrate.cep_ids],
+			mnesia:delete({substrate,Substrate_Id})
 	end.
 %delete_Agent/1 accepts the id of an agent, and then delets that agent's genotype. This function assumes that the id of the agent will be removed from the specie's agent_ids list, and any other clean up procedures, by the calling function.
 
 delete_Agent(Agent_Id,safe)->
 	F = fun()->
-		A = genotype:read({agent,Agent_Id}),
-		S = genotype:read({specie,A#agent.specie_id}),
+		[A] = genotype:read({agent,Agent_Id}),
+		[S] = genotype:read({specie,A#agent.specie_id}),
 		Agent_Ids = S#specie.agent_ids,
 		%DeadPool = S#specie.dead_pool,
-		write(S#specie{agent_ids = lists:delete(Agent_Id,Agent_Ids)}),
+		mnesia:write(S#specie{agent_ids = lists:delete(Agent_Id,Agent_Ids)}),
 		delete_Agent(Agent_Id)
 	end,
 	Result=mnesia:transaction(F),
