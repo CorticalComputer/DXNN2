@@ -51,7 +51,12 @@ prep(ExoSelf_PId) ->
 	receive 
 		{ExoSelf_PId,{Id,Cx_PId,AF,PF,AggrF,HeredityType,SI_PIdPs,MI_PIdPs,Output_PIds,RO_PIds}} ->
 			fanout(RO_PIds,{self(),forward,[?RO_SIGNAL]}),
-			SI_PIds = lists:append([IPId || {IPId,_W} <- SI_PIdPs, IPId =/= bias],[ok]),
+			SI_PIds = case AF of
+				{circuit,_}->
+					lists:append([IPId || {IPId,_IVL} <- SI_PIdPs#circuit.i, IPId =/= bias],[ok]);
+				_->
+					lists:append([IPId || {IPId,_W} <- SI_PIdPs, IPId =/= bias],[ok])
+			end,
 			MI_PIds = lists:append([IPId || {IPId,_W} <- MI_PIdPs, IPId =/= bias],[ok]),
 			%io:format("SI_PIdPs:~p ~nMI_PIdPs:~p~n",[SI_PIdPs,MI_PIdPs]),
 			S=#state{
@@ -87,29 +92,53 @@ loop(S,ExoSelf_PId,[ok],[ok],SIAcc,MIAcc)->
 	%io:format("self:~p~n SIAcc:~p~n MIAcc:~p~n",[self(), SIAcc,MIAcc]),
 	Ordered_SIAcc = lists:reverse(SIAcc),
 	SI_PIdPs = S#state.si_pidps_current,
-	%SAggregation_Product = signal_aggregator:AggrF(Ordered_SIAcc,SI_PIdPs),
-	%SOutput = sat(functions:AF(SAggregation_Product),?OUTPUT_SAT_LIMIT),%Saturation is done at -1 and 1
-	SOutput = sat(functions:AF(signal_aggregator:AggrF(Ordered_SIAcc,SI_PIdPs)),?OUTPUT_SAT_LIMIT),
-	%io:format("SOutput:~p~n",[SOutput]),
-	Output_PIds = S#state.output_pids,
-	[Output_PId ! {self(),forward,[SOutput]} || Output_PId <- Output_PIds],
-	
-	case PFName of
-		none ->
-			U_S=S;
-		_ ->%io:format("MIAcc:~p, S:~p~n",[MIAcc,S]),
-			Ordered_MIAcc = lists:reverse(MIAcc),
-			MI_PIdPs = S#state.mi_pidps_current,
-			MAggregation_Product = signal_aggregator:dot_product(Ordered_MIAcc,MI_PIdPs),
-			MOutput = sat(functions:tanh(MAggregation_Product),?SAT_LIMIT),
-			U_SI_PIdPs = plasticity:PFName([MOutput|PFParameters],Ordered_SIAcc,SI_PIdPs,SOutput),
-			%io:format("U_SI_PIdPs:~p~n",[U_SI_PIdPs]),
+
+	case AF of
+		{circuit,_InitSpec} ->
+			%io:format("Here~p~n",[{self(),Ordered_SIAcc,SI_PIdPs,PF}]),
+			{OutputVector,U_SI_PIdPs} = circuit:transfer_function(Ordered_SIAcc,SI_PIdPs,PF),
+			%io:format("OutputVector:~p~n",[{self(),OutputVector}]),
+			SOutput = [functions:sat(O,1,-1) || O<-OutputVector],
 			U_S=S#state{
 				si_pidps_current = U_SI_PIdPs
-			}
+			};
+			%fanout(S#state.o,{self(),forward,SOutput});
+		_ ->
+			SOutput = case AF of
+				cplx ->
+					complex:calculate_output(Ordered_SIAcc,SI_PIdPs);
+				_ ->
+%					postprocessor:PostProc(functions:AF(signal_integrator:SigInt(preprocessor:PreProc(DIV),WeightsP)))
+					%SAggregation_Product = signal_aggregator:AggrF(Ordered_SIAcc,SI_PIdPs),
+					%SOutput = sat(functions:AF(SAggregation_Product),?OUTPUT_SAT_LIMIT),%Saturation is done at -1 and 1
+					[sat(functions:AF(signal_aggregator:AggrF(Ordered_SIAcc,SI_PIdPs)),?OUTPUT_SAT_LIMIT)]
+					%io:format("SOutput:~p~n",[SOutput]),
+			end,
+			case PFName of
+				none ->
+					U_S=S;
+				_ ->%io:format("MIAcc:~p, S:~p~n",[MIAcc,S]),
+					Ordered_MIAcc = lists:reverse(MIAcc),
+					MI_PIdPs = S#state.mi_pidps_current,
+					MAggregation_Product = signal_aggregator:dot_product(Ordered_MIAcc,MI_PIdPs),
+					MOutput = sat(functions:tanh(MAggregation_Product),?SAT_LIMIT),
+					U_SI_PIdPs = plasticity:PFName([MOutput|PFParameters],Ordered_SIAcc,SI_PIdPs,SOutput),
+					%io:format("U_SI_PIdPs:~p~n",[U_SI_PIdPs]),
+					U_S=S#state{
+						si_pidps_current = U_SI_PIdPs
+					}
+			end
+%			Output=functions:sat(Out,1,-1),
+%			%io:format("Plasticity:~p~n",[Plasticity]),
+%			U_DWP = plasticity:Plasticity(DIV,Output,WeightsP),
+%			fanout(S#state.o,{self(),forward,[Output]});
 	end,
-	SI_PIds = S#state.si_pids,
-	MI_PIds = S#state.mi_pids,
+	
+	Output_PIds = S#state.output_pids,
+	[Output_PId ! {self(),forward,SOutput} || Output_PId <- Output_PIds],
+		
+	SI_PIds = U_S#state.si_pids,
+	MI_PIds = U_S#state.mi_pids,
 	neuron:loop(U_S,ExoSelf_PId,SI_PIds,MI_PIds,[],[]);
 loop(S,ExoSelf_PId,[SI_PId|SI_PIds],[MI_PId|MI_PIds],SIAcc,MIAcc)->
 	receive
@@ -143,8 +172,14 @@ loop(S,ExoSelf_PId,[SI_PId|SI_PIds],[MI_PId|MI_PIds],SIAcc,MIAcc)->
 			},
 			loop(U_S,ExoSelf_PId,[SI_PId|SI_PIds],[MI_PId|MI_PIds],SIAcc,MIAcc);
 		{ExoSelf_PId,weight_perturb,Spread}->
-			Perturbed_SIPIdPs=perturb_IPIdPs(Spread,S#state.si_pidps_backup),
-			Perturbed_MIPIdPs=perturb_IPIdPs(Spread,S#state.mi_pidps_backup),
+			case S#state.af of
+				{circuit,_}->
+					Perturbed_SIPIdPs=circuit:perturb_circuit(S#state.si_pidps_backup,Spread),
+					Perturbed_MIPIdPs=perturb_IPIdPs(Spread,S#state.mi_pidps_backup);
+				_ ->
+					Perturbed_SIPIdPs=perturb_IPIdPs(Spread,S#state.si_pidps_backup),
+					Perturbed_MIPIdPs=perturb_IPIdPs(Spread,S#state.mi_pidps_backup)
+			end,
 			Perturbed_PF=perturb_PF(Spread,S#state.pf_backup),
 			U_S=S#state{
 				si_pidps_bl=Perturbed_SIPIdPs,
@@ -159,7 +194,9 @@ loop(S,ExoSelf_PId,[SI_PId|SI_PIds],[MI_PId|MI_PIds],SIAcc,MIAcc)->
 			RO_PIds = S#state.ro_pids,
 			receive 
 				{ExoSelf_PId, reset}->
-					fanout(RO_PIds,{self(),forward,[?RO_SIGNAL]})
+					fanout(RO_PIds,{self(),forward,[?RO_SIGNAL]});
+				{ExoSelf_PId,terminate}->
+					ok
 			end,
 			loop(S,ExoSelf_PId,S#state.si_pids,S#state.mi_pids,[],[]);
 		{ExoSelf_PId,get_backup}->
@@ -167,7 +204,7 @@ loop(S,ExoSelf_PId,[SI_PId|SI_PIds],[MI_PId|MI_PIds],SIAcc,MIAcc)->
 			ExoSelf_PId ! {self(),NId,S#state.si_pidps_backup,S#state.mi_pidps_backup,S#state.pf_backup},
 			loop(S,ExoSelf_PId,[SI_PId|SI_PIds],[MI_PId|MI_PIds],SIAcc,MIAcc);
 		{ExoSelf_PId,terminate}->
-			%io:format("Neuron:~p is terminating.~n",[self()])
+			%io:format("Neuron:~p is terminating.~n",[self()]),
 			ok
 		%after 10000 ->
 			%io:format("neuron:~p stuck.~n",[S#state.id])
@@ -208,17 +245,18 @@ perturb_IPIdPs(_Spread,_MP,[],Acc)->
 	lists:reverse(Acc).
 %The perturb_IPIdPs/1 function calculates the probability with which each neuron in the Input_PIdPs is chosen to be perturbed. The probablity is based on the total number of weights in the Input_PIdPs list, with the actual mutation probablity equating to the inverse of square root of total number of weights. The perturb_IPIdPs/3 function goes through each weights block and calls the perturb_weights/3 to perturb the weights.
 
-	perturb_weightsP(Spread,MP,[{W,LPs}|Weights],Acc)->
+	perturb_weightsP(Spread,MP,[{W,PDW,LP,LPs}|Weights],Acc)->
 		%io:format("Spread:~p~n",[Spread]),
 		U_W = case random:uniform() < MP of
 			true->
-				DW = (random:uniform()-0.5)*Spread,
+				DW = (random:uniform()-0.5)*Spread+PDW*0.5,
 				%io:format("self:~p DW:~p~n",[DW,self()]),
 				sat(W+DW,-?SAT_LIMIT,?SAT_LIMIT);
 			false ->
+				DW = PDW,
 				W
 		end,
-		perturb_weightsP(Spread,MP,Weights,[{U_W,LPs}|Acc]);
+		perturb_weightsP(Spread,MP,Weights,[{U_W,DW,LP,LPs}|Acc]);
 	perturb_weightsP(_Spread,_MP,[],Acc)->
 		lists:reverse(Acc).
 %The perturb_weights/3 function is the function that actually goes through each weight block, and perturbs each weight with a probablity of MP. If the weight is chosen to be perturbed, the perturbation intensity is chosen uniformly between -Spread and Spread.

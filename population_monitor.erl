@@ -54,6 +54,7 @@
 	evaluations_limit = 100000,
 	fitness_goal = inf,
 	benchmarker_pid,
+	committee_pid,
 	goal_reached=false
 }).
 
@@ -314,6 +315,11 @@ handle_cast({From,evaluations,Specie_Id,AEA,AgentCycleAcc,AgentTimeAcc},S)->
 			Population_Id = S#state.population_id,
 			P = genotype:dirty_read({population,Population_Id}),
 			T = P#population.trace,
+			case S#state.committee_pid of
+				undefined -> ok;
+				Committee_PId ->
+					Committee_PId ! {self(),trace_update,T}
+			end,
 			TotEvaluations=T#trace.tot_evaluations,
 			io:format("Tot Evaluations:~p~n",[U_TotEvaluations]),
 			S#state{eval_acc=0, cycle_acc=0, time_acc=0, tot_evaluations=U_TotEvaluations};
@@ -669,7 +675,7 @@ intrapopulation_selection(Population_Id,KeepTot,Fitness_Postprocessor,Selection_
 						fitness_domination(Agent,[Champ|Champs],LoserAcc,Acc)->
 							case Agent#champion.hof_fingerprint == Champ#champion.hof_fingerprint of
 								true ->
-									case length([1||Val<-vecdiff(Agent#champion.fitness,Champ#champion.fitness,[]), Val > 0]) == length(Champ#champion.fitness) of
+									case benchmarker:vector_gt(Agent#champion.fitness,Champ#champion.fitness) of %is agent dominating any of the current champs, if so remove it.
 										true ->
 											%We should still keep it though, if it's within some range of the dominating agent, and the system does not use genetic exploration.
 											case (Champ#champion.main_fitness > Agent#champion.main_fitness*?MIN_ACCEPTABLE_FITNESS_RATIO) of
@@ -704,10 +710,10 @@ intrapopulation_selection(Population_Id,KeepTot,Fitness_Postprocessor,Selection_
 						end.
 							
 						opf(Agent,[Champ|Champs])->
-							case length([1||Val<-vecdiff(Agent#champion.fitness,Champ#champion.fitness,[]), Val > 0]) > 0 of
-								true ->
-									opf(Agent,Champs);
+							case benchmarker:vector_gt(Champ#champion.fitness,Agent#champion.fitness) of %Are any of the current champs dominating the agent? if no, then it is on pareto front.
 								false ->
+									opf(Agent,Champs);
+								true ->
 									false
 							end;
 						opf(_Agent,[])->
@@ -756,6 +762,8 @@ intrapopulation_selection(Population_Id,KeepTot,Fitness_Postprocessor,Selection_
 						#champion{
 							hof_fingerprint=[specie_identifier:Distinguisher(Agent_Id)|| Distinguisher <- Distinguishers],
 							fitness = A#agent.fitness,%A list of multi objective fitnesses and stuff.
+							%validation_fitness=A#agent.validation_fitness,
+							%test_fitness=A#agent.test_fitness,
 							main_fitness = A#agent.main_fitness, % A single fitness value that we can use to decide on probability of offspring creation.
 							tot_n = length(lists:flatten([NIds||{_LayerId,NIds}<-A#agent.pattern])),
 							id = Agent_Id,
@@ -889,7 +897,8 @@ delete_population(Population_Id)->
 			genotype:delete_Agent(A#agent.id),
 			Offspring_Ids = A#agent.offspring_ids,
 			io:format("Offspring Ids:~p~n",[Offspring_Ids]),
-			[delete_genetic_line(Id) || Id <- Offspring_Ids].
+			[delete_genetic_line(Id) || Id <- Offspring_Ids],
+			ok.
 			
 calculate_EnergyCost(Population_Id)->
 	Agent_Ids = extract_AgentIds(Population_Id,all),
@@ -1011,45 +1020,56 @@ gather_STATS(Population_Id,EvaluationsAcc,OpMode)->
 		mnesia:dirty_write(S#specie{stats=U_STATS}),
 		STAT.
 
-		validation_testing(Specie_Id,OpModes)->
-			[S] = mnesia:read({specie,Specie_Id}),
-			SHOF = S#specie.hall_of_fame,
-			SortedChampions=lists:reverse(lists:sort([{C#champion.main_fitness,C#champion.id} || C <- SHOF])),
-			io:format("Sorted champions:~p~n",[SortedChampions]),
+		validation_testing(Specie_Id,OpModes)->%Perhaps test all agents in the SHOF
 			case lists:member(validation,OpModes) of
 				true ->
-					Champion_Id = case SortedChampions of
-						[{Champ_TrnFitness,Champ_Id}] ->
-							Champ_Id;
+					[S] = mnesia:read({specie,Specie_Id}),
+					SHOF = S#specie.hall_of_fame,
+					U_SHOF=champion_ValTest(SHOF,[]),
+					mnesia:write(S#specie{hall_of_fame=U_SHOF}),
+					SortedChampions=lists:reverse(lists:sort([{C#champion.main_fitness,C#champion.id} || C <- U_SHOF])),
+					io:format("Sorted champions:~p~n",[SortedChampions]),
+					case SortedChampions of
 						[{Champ_TrnFitness,Champ_Id}|_] ->
-							Champ_Id;
+							Champion=lists:keyfind(Champ_Id,3,U_SHOF),
+							{Champion#champion.validation_fitness,Champion#champion.test_fitness,Champ_Id};
 						[]->
-							void
-					end,
-					case Champion_Id of
-						void ->
-							{[],[],void};
-						_ ->
-							%{ok,Champion_PId}= exoself:start_link({validation,Champion_Id,1,self()}),
-							ValChampion_PId=exoself:start(Champion_Id,self(),validation),
-							receive
-								%{Champion_Id,ValFitness,FitnessProfile}->
-								{ValChampion_Id,validation_complete,Specie_Id,ValFitness,ValCycles,ValTime}->
-									%io:format("Got Validation results:~p~n",[{Champion_Id,validation_complete,Specie_Id,ValFitness,Cycles,Time}]),
-									{ValFitness,Champion_Id}
-							end,
-							TestChampion_PId=exoself:start(Champion_Id,self(),test),
-							receive
-								%{Champion_Id,ValFitness,FitnessProfile}->
-								{TestChampion_Id,test_complete,Specie_Id,TestFitness,TestCycles,TestTime}->
-									%io:format("Got Validation results:~p~n",[{Champion_Id,validation_complete,Specie_Id,ValFitness,Cycles,Time}]),
-									{TestFitness,Champion_Id}
-							end,
-							{ValFitness,TestFitness,Champion_Id}
+							{[],[],void}
 					end;
 				false ->
-					{0,0,void}
+					{[],[],void}
 			end.
+			
+			champion_ValTest([C|Champions],Acc)->
+				Champion_Id = C#champion.id,
+				ValFitness=case C#champion.validation_fitness of
+					undefined ->
+						ValChampion_PId=exoself:start(Champion_Id,self(),validation),
+						receive
+							%{Champion_Id,ValFitness,FitnessProfile}->
+							{ValChampion_Id,validation_complete,ValSpecie_Id,ValFitness,ValCycles,ValTime}->
+							%io:format("Got Validation results:~p~n",[{Champion_Id,validation_complete,Specie_Id,ValFitness,Cycles,Time}]),
+								ValFitness
+						end;
+					ValFitness->
+						ValFitness
+				end,
+				TestFitness=case C#champion.test_fitness of
+					undefined ->
+						TestChampion_PId=exoself:start(Champion_Id,self(),test),
+						receive
+							%{Champion_Id,ValFitness,FitnessProfile}->
+							{TestChampion_Id,test_complete,TestSpecie_Id,TestFitness,TestCycles,TestTime}->
+								%io:format("Got Validation results:~p~n",[{Champion_Id,validation_complete,Specie_Id,ValFitness,Cycles,Time}]),
+								{TestFitness,Champion_Id}
+						end;
+					TestFitness ->
+						TestFitness
+				end,
+				U_C = C#champion{validation_fitness=ValFitness,test_fitness=TestFitness},
+				champion_ValTest(Champions,[U_C|Acc]);		
+			champion_ValTest([],Acc)->
+				lists:reverse(Acc).
 
 calculate_SpecieAvgNodes({specie,S})->
 	Agent_Ids = S#specie.agent_ids,

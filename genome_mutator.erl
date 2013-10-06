@@ -210,7 +210,13 @@ mutate_weights(Agent_Id)->
 	N_Id = lists:nth(random:uniform(length(N_Ids)),N_Ids),
 	N = genotype:read({neuron,N_Id}),
 	Input_IdPs = N#neuron.input_idps,
-	U_Input_IdPs = perturb_IdPs(Input_IdPs),
+	U_Input_IdPs = case N#neuron.af of
+		{circuit,InitSpec} ->
+			{_CircuitLayersSpecs,U_Layers}=circuit:perturb_weights(Input_IdPs#circuit.layers,math:pi(),Input_IdPs#circuit.layers_spec),
+			Input_IdPs#circuit{layers=U_Layers};
+		_ ->
+			perturb_IdPs(Input_IdPs)
+	end,
 	U_N = N#neuron{input_idps = U_Input_IdPs},
 	EvoHist = A#agent.evo_hist,
 	U_EvoHist = [{mutate_weights,N_Id}|EvoHist],
@@ -249,6 +255,60 @@ mutate_weights(Agent_Id)->
 			end.
 %sat/3 calculates whether Val is between Min and Max values, if it is, then val is returned as is. If Val is less than Min, then Min is returned, if Val is greater than Max, then Max is returned.
 
+%{add_CircuitLayer,3},
+%{add_CircuitNode,3},
+%delete_CircuitNode,
+add_CircuitNode(Agent_Id)->
+	A = genotype:read({agent,Agent_Id}),
+	Cx_Id = A#agent.cx_id,
+	[Cx] = mnesia:read({cortex,Cx_Id}),
+	io:format("Inside add_CircuitNode(Agent_Id)~n"),
+	NId_Pool=Cx#cortex.neuron_ids,
+	N_Id = lists:nth(random:uniform(length(NId_Pool)),NId_Pool),	
+	[N] = mnesia:read({neuron,N_Id}),
+	case N#neuron.af of
+		{circuit,InitSpec} ->
+			C = N#neuron.input_idps,
+			{U_CircuitLayersSpec,U_Layers}=circuit:add_neurode(C#circuit.layers,void,C#circuit.layers_spec),
+			U_C = C#circuit{layers=U_Layers,layers_spec=U_CircuitLayersSpec},
+			U_N = N#neuron{input_idps = U_C},
+%			mnesia:write(U_N),
+%			update_EvoHist(DX_Id,add_CircuitNode,void,N_Id,void,void,void)
+			EvoHist = A#agent.evo_hist,
+			U_EvoHist = [{add_circuit_node,N_Id}|EvoHist],
+			U_A = A#agent{evo_hist=U_EvoHist},
+			genotype:write(U_N),
+			genotype:write(U_A);
+		_ ->
+			exit("******** ERROR: Not a circuit type neuron, can not execute: add_CircuitNode(DX_Id,Cx_Id)~n")
+	end.
+
+add_CircuitLayer(Agent_Id)->
+	A = genotype:read({agent,Agent_Id}),
+	Cx_Id = A#agent.cx_id,
+	[Cx] = mnesia:read({cortex,Cx_Id}),
+	io:format("add_CircuitLayer(Agent_Id)~n"),
+	NId_Pool=Cx#cortex.neuron_ids,
+	N_Id = lists:nth(random:uniform(length(NId_Pool)),NId_Pool),	
+	[N] = mnesia:read({neuron,N_Id}),
+	case N#neuron.af of
+		{circuit,InitSpec} ->
+			C = N#neuron.input_idps,
+			{U_CircuitLayersSpec,U_Layers}=circuit:add_layer(C#circuit.layers,void,C#circuit.layers_spec),
+			U_C = C#circuit{layers=U_Layers,layers_spec=U_CircuitLayersSpec},
+			U_N = N#neuron{input_idps = U_C},
+%			mnesia:write(U_N),
+%			update_EvoHist(DX_Id,add_layer,void,N_Id,void,void,void)
+			EvoHist = A#agent.evo_hist,
+			U_EvoHist = [{add_circuit_layer,N_Id}|EvoHist],
+			U_A = A#agent{evo_hist=U_EvoHist},
+			genotype:write(U_N),
+			genotype:write(U_A);
+		_ ->
+			exit("******** ERROR: Not a circuit type neuron, can not execute: add_CircuitLayer(DX_Id,Cx_Id)~n")
+	end.
+
+
 add_bias(Agent_Id)->
 	A = genotype:read({agent,Agent_Id}),
 	Cx_Id = A#agent.cx_id,
@@ -261,29 +321,47 @@ add_bias(Agent_Id)->
 	SI_IdPs = N#neuron.input_idps,
 	MI_IdPs = N#neuron.input_idps_modulation,
 	{PFName,_NLParameters} = N#neuron.pf,
-	case {lists:keymember(bias,1,SI_IdPs), lists:keymember(bias,1,MI_IdPs), PFName == neuromodulation, random:uniform(2)} of
-		{_,false,true,2} ->
-			U_MI_IdPs = lists:append(MI_IdPs,[{bias,[{random:uniform()-0.5,plasticity:PFName(weight_parameters)}]}]),
+	case N#neuron.af of
+		{circuit,_InitSpec} ->
+			C = N#neuron.input_idps,
+			Layers = C#circuit.layers,
+			CircuitLayersSpec = C#circuit.layers_spec,
+			{_CircuitLayersSpec,U_Layers} = circuit:add_bias(Layers,void,CircuitLayersSpec),
+			U_C = C#circuit{layers=U_Layers},
 			U_N = N#neuron{
-				input_idps_modulation = U_MI_IdPs,
-				generation = Generation},
-			EvoHist = A#agent.evo_hist,
-			U_EvoHist = [{{add_bias,m},N_Id}|EvoHist],
-			U_A = A#agent{evo_hist=U_EvoHist},
-			genotype:write(U_N),
-			genotype:write(U_A);
-		{true,_,_,_} ->
-			exit("********ERROR:add_bias:: This Neuron already has a bias in input_idps.");
-		{false,_,_,_} ->
-			U_SI_IdPs = lists:append(SI_IdPs,[{bias,[{random:uniform()-0.5,plasticity:PFName(weight_parameters)}]}]),
-			U_N = N#neuron{
-				input_idps = U_SI_IdPs,
-				generation = Generation},
+				input_idps = U_C,
+				generation = Generation
+			},
 			EvoHist = A#agent.evo_hist,
 			U_EvoHist = [{{add_bias,s},N_Id}|EvoHist],
 			U_A = A#agent{evo_hist=U_EvoHist},
 			genotype:write(U_N),
-			genotype:write(U_A)
+			genotype:write(U_A);
+		_ ->
+			case {lists:keymember(bias,1,SI_IdPs), lists:keymember(bias,1,MI_IdPs), PFName == neuromodulation, random:uniform(2)} of
+				{_,false,true,2} ->
+					U_MI_IdPs = lists:append(MI_IdPs,[{bias,[{random:uniform()-0.5,0,0.1,plasticity:PFName(weight_parameters)}]}]),
+					U_N = N#neuron{
+						input_idps_modulation = U_MI_IdPs,
+						generation = Generation},
+					EvoHist = A#agent.evo_hist,
+					U_EvoHist = [{{add_bias,m},N_Id}|EvoHist],
+					U_A = A#agent{evo_hist=U_EvoHist},
+					genotype:write(U_N),
+					genotype:write(U_A);
+				{true,_,_,_} ->
+					exit("********ERROR:add_bias:: This Neuron already has a bias in input_idps.");
+				{false,_,_,_} ->
+					U_SI_IdPs = lists:append(SI_IdPs,[{bias,[{random:uniform()-0.5,0,0.1,plasticity:PFName(weight_parameters)}]}]),
+					U_N = N#neuron{
+						input_idps = U_SI_IdPs,
+						generation = Generation},
+					EvoHist = A#agent.evo_hist,
+					U_EvoHist = [{{add_bias,s},N_Id}|EvoHist],
+					U_A = A#agent{evo_hist=U_EvoHist},
+					genotype:write(U_N),
+					genotype:write(U_A)
+			end
 	end.
 %The add_bias/1 function is called with the Agent_Id parameter. The function first extracts the neuron_ids list from the cortex element and chooses a random neuron from the id list. After the neuron is read from the database, we check whether input_idps and input_idps_modulation lists already have bias, and we randomly generate a value 1 or 2. If the value 1 is generated and the input_idps list does not have a bias, it is added. If the value 2 is generated, and the input_idps_modulation does not have a bias, it is added. Otherwise an error is returned. 
 
@@ -299,29 +377,47 @@ remove_bias(Agent_Id)->
 	SI_IdPs = N#neuron.input_idps,
 	MI_IdPs = N#neuron.input_idps_modulation,
 	{PFName,_NLParameters} = N#neuron.pf,
-	case {lists:keymember(bias,1,SI_IdPs), lists:keymember(bias,1,MI_IdPs), PFName == neuromodulation, random:uniform(2)} of
-		{_,true,true,2} ->%Remove modulatory bias
-			U_MI_IdPs = lists:keydelete(bias,1,MI_IdPs),
+	case N#neuron.af of
+		{circuit,_InitSpec} ->
+			C = N#neuron.input_idps,
+			Layers = C#circuit.layers,
+			CircuitLayersSpec = C#circuit.layers_spec,
+			{_CircuitLayersSpec,U_Layers} = circuit:remove_bias(Layers,void,CircuitLayersSpec),
+			U_C = C#circuit{layers=U_Layers},
 			U_N = N#neuron{
-				input_idps_modulation = U_MI_IdPs,
-				generation = Generation},
-			EvoHist = A#agent.evo_hist,
-			U_EvoHist = [{{remove_bias,m},N_Id}|EvoHist],
-			U_A = A#agent{evo_hist=U_EvoHist},
-			genotype:write(U_N),
-			genotype:write(U_A);
-		{false,_,_,_} ->
-			exit("********ERROR:remove_bias:: This Neuron does not have a bias in input_idps.");
-		{true,_,_,_} ->%Remove synaptic bias
-			U_SI_IdPs = lists:keydelete(bias,1,SI_IdPs),
-			U_N = N#neuron{
-				input_idps = U_SI_IdPs,
-				generation = Generation},
+				input_idps = U_C,
+				generation = Generation
+			},
 			EvoHist = A#agent.evo_hist,
 			U_EvoHist = [{{remove_bias,s},N_Id}|EvoHist],
 			U_A = A#agent{evo_hist=U_EvoHist},
 			genotype:write(U_N),
-			genotype:write(U_A)
+			genotype:write(U_A);
+		_ ->
+			case {lists:keymember(bias,1,SI_IdPs), lists:keymember(bias,1,MI_IdPs), PFName == neuromodulation, random:uniform(2)} of
+				{_,true,true,2} ->%Remove modulatory bias
+					U_MI_IdPs = lists:keydelete(bias,1,MI_IdPs),
+					U_N = N#neuron{
+						input_idps_modulation = U_MI_IdPs,
+						generation = Generation},
+					EvoHist = A#agent.evo_hist,
+					U_EvoHist = [{{remove_bias,m},N_Id}|EvoHist],
+					U_A = A#agent{evo_hist=U_EvoHist},
+					genotype:write(U_N),
+					genotype:write(U_A);
+				{false,_,_,_} ->
+					exit("********ERROR:remove_bias:: This Neuron does not have a bias in input_idps.");
+				{true,_,_,_} ->%Remove synaptic bias
+					U_SI_IdPs = lists:keydelete(bias,1,SI_IdPs),
+					U_N = N#neuron{
+						input_idps = U_SI_IdPs,
+						generation = Generation},
+					EvoHist = A#agent.evo_hist,
+					U_EvoHist = [{{remove_bias,s},N_Id}|EvoHist],
+					U_A = A#agent{evo_hist=U_EvoHist},
+					genotype:write(U_N),
+					genotype:write(U_A)
+			end
 	end.
 %The remove_bias/1 function is called with the Agent_Id parameter. The function first extracts the neuron_ids list from the cortex element and chooses a random neuron from the id list. After the neuron is read from the database, we check whether input_idps and input_idps_modulation lists already have bias, and we randomly generate a value 1 or 2. If the value 1 is generated and the input_idps list has a bias, it is removed. If the value 2 is generated, and the input_idps_modulation has a bias, it is removed. Otherwise an error is returned. 
 
@@ -466,34 +562,53 @@ link_FromNeuronToNeuron(Generation,From_NeuronId,To_NeuronId)->
 %link_FromNeuron/4 updates the record of the neuron from whom the link is being created. FromN is the record of the neuron from whom the link/connection eminates, and ToId is the id of the element to whom the link is headed towards. The function extracts the layer index of the neuron FromN, and the layer index of the element with the id ToId. Then the two layer indecies are compared, and the ToId is either added only to the FromN's output_ids list, or if the connection is recursive, ToLayerIndex =< FromLayerIndex, to output_ids and ro_ids lists. The FromN's generation is updated to the value Generation, which is the current, most recent generation, since this neuron has just been modified. Finally, the updated neuron record is then returned to the caller. On the other hand, if ToId, the id of the element to which the connection is being established, is already a member of the FromN's output_ids list, then the function exits with error.
 
 	link_ToNeuron(FromId,FromOVL,ToN,Generation)->%TODO: Only allows a single connection from a presynaptic element.
-		ToSI_IdPs = ToN#neuron.input_idps,
+		ToSI_IdPs = case ToN#neuron.af of
+			{circuit,_}->
+				(ToN#neuron.input_idps)#circuit.i;
+			_ ->
+				ToN#neuron.input_idps
+		end,
 		ToMI_IdPs = ToN#neuron.input_idps_modulation,
 		{PFName,_NLParameters}=ToN#neuron.pf,
 		case {lists:keymember(FromId,1,ToSI_IdPs),lists:keymember(FromId,1,ToMI_IdPs)} of
 			{false,false} ->
-				case ToSI_IdPs of
-					[] ->
-						U_ToSI_IdPs = [{FromId, genotype:create_NeuralWeightsP(PFName,FromOVL,[])}|ToSI_IdPs],
+%				case ToSI_IdPs of
+%					[] ->
+%						U_ToSI_IdPs = [{FromId, genotype:create_NeuralWeightsP(PFName,FromOVL,[])}|ToSI_IdPs],
+%						ToN#neuron{
+%							input_idps = U_ToSI_IdPs,
+%							generation = Generation
+%						};
+%					_ ->	
+				case {PFName == neuromodulation, random:uniform(2)} of
+					{true,2} ->
+						U_ToMI_IdPs = [{FromId, genotype:create_NeuralWeightsP(PFName,FromOVL,[])}|ToMI_IdPs],
+						ToN#neuron{
+							input_idps_modulation = U_ToMI_IdPs,
+							generation = Generation
+						};
+					_ ->
+						U_ToSI_IdPs = case ToN#neuron.af of
+							{circuit,_To_InitSpec} ->%Because new neuron connections are accumulated on the left, we need to accumulate new weights on the left of the weight list for every neurode in input layer of circuit
+								C = ToN#neuron.input_idps,
+								%io:format("link_ToNeuron::~n AF:~p~n C#circuit.i:~p~n",[ToN#neuron.af,C#circuit.i]),
+								[NeurodeLayer|Substrate]=C#circuit.layers,
+								U_Neurodes=[Neurode#neurode{weights=circuit:add_weights(1,FromOVL,Neurode#neurode.af,Neurode#neurode.weights)}||Neurode<-NeurodeLayer#layer.neurodes],
+								U_NeurodeLayer = NeurodeLayer#layer{neurodes=U_Neurodes},
+								U_ToI = [{FromId,FromOVL}|C#circuit.i],
+								C#circuit{
+									i = U_ToI,
+									layers=[U_NeurodeLayer|Substrate]
+								};
+							_ ->
+								[{FromId, genotype:create_NeuralWeightsP(PFName,FromOVL,[])}|ToSI_IdPs]
+						end,
 						ToN#neuron{
 							input_idps = U_ToSI_IdPs,
 							generation = Generation
-						};
-					_ ->	
-						case {PFName == neuromodulation, random:uniform(2)} of
-							{true,2} ->
-								U_ToMI_IdPs = [{FromId, genotype:create_NeuralWeightsP(PFName,FromOVL,[])}|ToMI_IdPs],
-								ToN#neuron{
-									input_idps_modulation = U_ToMI_IdPs,
-									generation = Generation
-								};
-							_ ->
-								U_ToSI_IdPs = [{FromId, genotype:create_NeuralWeightsP(PFName,FromOVL,[])}|ToSI_IdPs],
-								ToN#neuron{
-									input_idps = U_ToSI_IdPs,
-									generation = Generation
-								}
-						end
+						}
 				end;
+%				end;
 			_ ->
 				exit("ERROR:add_NeuronI::[can not add I_Id]: ~p already connected to ~p~n",[FromId,ToN#neuron.id])
 		end.
@@ -588,13 +703,33 @@ cutlink_FromNeuronToNeuron(Generation,From_NeuronId,To_NeuronId)->
 %cutlink_FromNeuron/3 cuts the connection on the FromNeuron (FromN) side. The function first checks if the ToId is a member of the output_ids list, if its not then the function exits with an error. If the ToId is a member of the output_ids list, then the function removes the ToId from the FromOutput_Ids and from the FromRO_Ids. Even if the ToId is a recursive connection, then removing it from ro_ids updates the FromRO_Ids list, if its not, then no change is made to the ro_ids list. Once the lists are updated, the updated neuron record of FromN is returned to the caller.
 
 	cutlink_ToNeuron(FromId,ToN,Generation)->
-		ToSI_IdPs = ToN#neuron.input_idps,
+		ToSI_IdPs = case ToN#neuron.af of
+			{circuit,_}->
+				(ToN#neuron.input_idps)#circuit.i;
+			_->
+				ToN#neuron.input_idps
+		end,
 		ToMI_IdPs = ToN#neuron.input_idps_modulation,
 		Guard1 = lists:keymember(FromId, 1, ToSI_IdPs),
 		Guard2 = lists:keymember(FromId, 1, ToMI_IdPs),
 		if 
 			Guard1->
-				U_ToSI_IdPs = lists:keydelete(FromId,1,ToSI_IdPs),
+				U_ToSI_IdPs = case ToN#neuron.af of
+					{circuit,InitSpec} ->%Weights are removed based on the TargetIndex somewhere in the weight list.
+						C=ToN#neuron.input_idps,
+						ToI = C#circuit.i,
+						{TargetIndex,TargetVL}=lists:keyfind(FromId,1,ToI),
+						[NeurodeLayer|Substrate] = C#circuit.layers,
+						U_Neurodes=[Neurode#neurode{weights=circuit:delete_weights(TargetIndex,TargetVL,Neurode#neurode.weights)}||Neurode<-NeurodeLayer#layer.neurodes],
+						U_NeurodeLayer = NeurodeLayer#layer{neurodes=U_Neurodes},
+						U_ToI = lists:keydelete(FromId,1,ToI),
+						C#circuit{
+							i=U_ToI,
+							layers=[U_NeurodeLayer|Substrate]
+						};
+					_->
+						lists:keydelete(FromId,1,ToSI_IdPs)
+				end,
 				ToN#neuron{
 					input_idps = U_ToSI_IdPs,
 					generation = Generation};
@@ -708,7 +843,12 @@ add_inlink(Agent_Id)->
 	end,
 	N_Id = lists:nth(random:uniform(length(N_Ids)),N_Ids),
 	N = genotype:read({neuron,N_Id}),
-	{SI_Ids,_SWeightPLists} = lists:unzip(N#neuron.input_idps),
+	{SI_Ids,_SWeightPLists} = case N#neuron.af of
+		{circuit,_}->
+			lists:unzip((N#neuron.input_idps)#circuit.i);
+		_ ->
+			lists:unzip(N#neuron.input_idps)
+	end,
 	{MI_Ids,_MWeightPLists} = lists:unzip(N#neuron.input_idps_modulation),
 	Inlink_NIdPool = filter_InlinkIdPool(A#agent.constraint,N_Id,N_Ids),
 	I_Ids = lists:append(SI_Ids,MI_Ids),
@@ -796,7 +936,7 @@ outsplice(Agent_Id)->
 %Create a new Layer, or select an existing one between N_Id and the O_Id, and create the new unlinked neuron.
 			NewLI = case OutputLayerIndex >= LayerIndex of
 				true ->
-						get_NewLI(LayerIndex,OutputLayerIndex,next,Pattern);
+					get_NewLI(LayerIndex,OutputLayerIndex,next,Pattern);
 				false ->
 					get_NewLI(LayerIndex,OutputLayerIndex,prev,Pattern)
 			end,

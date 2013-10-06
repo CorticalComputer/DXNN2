@@ -27,16 +27,106 @@
 -define(INTERACTIVE_SELECTION,false).
 -record(sensor,{id,name,type,cx_id,scape,vl,fanout_ids=[],generation,format,parameters,gt_parameters,phys_rep,vis_rep,pre_f,post_f}).
 -record(actuator,{id,name,type,cx_id,scape,vl,fanin_ids=[],generation,format,parameters,gt_parameters,phys_rep,vis_rep,pre_f,post_f}).
--record(neuron, {id, generation, cx_id, pre_processor,signal_integrator,af, post_processor, pf, aggr_f, input_idps=[], input_idps_modulation=[], output_ids=[], ro_ids=[]}).
+-record(neuron, {id, generation, cx_id, pre_processor, signal_integrator, af, post_processor, pf, aggr_f, input_idps=[], input_idps_modulation=[], output_ids=[], ro_ids=[]}).
 -record(cortex, {id, agent_id, neuron_ids=[], sensor_ids=[], actuator_ids=[]}).
 -record(substrate, {id, agent_id, densities, linkform, plasticity=none, cpp_ids=[],cep_ids=[]}).
 -record(agent,{id, encoding_type, generation, population_id, specie_id, cx_id, fingerprint, constraint, evo_hist=[], fitness=0, innovation_factor=0, pattern=[], tuning_selection_f, annealing_parameter, tuning_duration_f, perturbation_range, mutation_operators, tot_topological_mutations_f, heredity_type, substrate_id, offspring_ids=[], parent_ids=[], champion_flag=[false], evolvability=0, brittleness=0, robustness=0, evolutionary_capacitance=0, behavioral_trace,fs=1,main_fitness}).
--record(champion,{hof_fingerprint,id,fitness,main_fitness,tot_n,evolvability,robustness,brittleness,generation,behavioral_differences,fs}).
+-record(champion,{hof_fingerprint,id,fitness,validation_fitness,test_fitness,main_fitness,tot_n,evolvability,robustness,brittleness,generation,behavioral_differences,fs}).
 -record(specie,{id, population_id, fingerprint, constraint, agent_ids=[], dead_pool=[], champion_ids=[], fitness, innovation_factor={0,0},stats=[], seed_agent_ids=[], hof_distinguishers=[tot_n], specie_distinguishers=[tot_n], hall_of_fame=[]}).
 -record(trace,{stats=[],tot_evaluations=0,step_size=500}).
 -record(population,{id, polis_id, specie_ids=[], morphologies=[], innovation_factor, evo_alg_f, fitness_postprocessor_f, selection_f, trace=#trace{}, seed_agent_ids=[],seed_specie_ids=[]}).
 -record(stat,{morphology,specie_id,avg_neurons,std_neurons,avg_fitness,std_fitness,max_fitness,min_fitness,validation_fitness,test_fitness,avg_diversity,evaluations,time_stamp}).
 -record(topology_summary,{type,tot_neurons,tot_n_ils,tot_n_ols,tot_n_ros,af_distribution}).
+
+%type [standard,dae,ae], noise [float()], lp_decay [float()], lp_min[float()], lp_max [float()], memory [list()], memory_size {max_size::int(),counter::int()}
+-record(circuit,{
+	id,
+	i,%input_idps::[{id(),vl}]
+	ovl,%int()
+	ivl,
+	training,%{TrainingType::bp|rbm|ga,TrainingLength::int()|{validation_goal,float()}}
+	output,%[float()]
+	parameters,%list()
+	dynamics,%static|dynamic
+%	layers_spec,%[{af(),IVL::int(),static|dynamic,Receptive_Field::int(),Step::int()}]
+	layers,%[#neurode|#layer|#circuit]
+	type=standard,%standard|dae|ae|sdae|sae|{pooling,max|avg|min}
+	noise,%float()|undefined
+	noise_type=zero_mask,%zero_mask|gaussian|saltnpepper|undefined
+	lp_decay=0.999999,%float()
+	lp_min=0.0000001,%float()
+	lp_max=0.1,%float()
+%	receptive_field=full,%full|int()
+	memory=[],%[list()]
+	memory_size={0,100000},%{int(),int()}
+	validation,%[float()]
+	testing,%[float()]
+	receptive_field=full,%full|int()
+	step=0,%int()
+	block_size=100,%int()
+	err_acc=0,
+	backprop_tuning=off,
+	training_length=1000
+}).
+-record(layer,{
+	id,%Z::float()
+	type,
+	noise,
+%	type=standard,%{convolutional,VL}|{pooling,max|avg|min}|fully_connected|standard
+	neurode_type=tanh,%tanh|sin|cos|rbf|cplx1/2/3/4/5/6/7|gabor_2d
+	dynamics=dynamic,
+%	af,%tanh|sin|cos|rbf|cplx1/2/3/4/5/6/7|gabor_2d
+	neurodes=[],%[#neurode]
+	tot_neurodes,%int()
+	input,%[float()]
+	output,%[float()]
+	ivl,%int()
+%	receptive_field=full,%full|int()
+%	step=0,%int()
+	encoder=[],%[neurode]
+	decoder=[],%[#neurode]
+	backprop_tuning=off,%off|on
+	index_start,%int()
+	index_end,%int()
+	parameters=[]%[any()]
+}).
+
+-record(layer2,{
+	id,%Z::float()
+	noise,
+	type=dae,%{convolutional,VL}|{pooling,max|avg|min}|fully_connected|standard
+	neurode_type=tanh,%tanh|sin|cos|rbf|cplx1/2/3/4/5/6/7|gabor_2d
+%	af,%tanh|sin|cos|rbf|cplx1/2/3/4/5/6/7|gabor_2d
+	dynamics=dynamic,
+	neurodes=[],%[#neurode]
+	tot_neurodes,%int() :: length(neurodes)
+	input,%[float()]
+	output,%[float()]
+	ivl,%int()
+	receptive_field=full,%full|int()
+	step=0,%int()
+%	encoder=[],%[neurode], this is the neurodes element
+	decoder=[],%[#neurode]
+	backprop_tuning=off,%off|on
+	validation_err,%[float()]%In case of DAE
+	testing_err,%[float()]%In case of DAE
+	err_acc=0,
+	block_size=100,%int()
+	training_length=1000,
+	parameters=[]%[any()]
+}).
+
+-record(layer_spec,{type,af,ivl,dynamics,receptive_field,step}).%[{dae|pooling|standard,af(),IVL::int(),static|dynamic,Receptive_Field::int(),Step::int()}]
+
+-record(neurode,{
+	id,%[X::float(),Y::float()]
+	weights,%[float()]|[{float(),float(),float()}]
+	i,
+	af,%tanh|sin|cos|rbf|cplx1/2/3/4/5/6/7|gabor_2d
+	bias,%float()|{float(),float(),float()}
+	parameters=[],%list()
+	dot_product%[float()]
+}).
 
 -record(constraint,{
 	morphology=xor_mimic, %xor_mimic 
@@ -48,6 +138,7 @@
 		%sqrt
 		%absolute
 	], %[tanh,cos,gaussian,absolute,sin,sqrt,sigmoid],
+%	neural_types = [standard], %[standard]
 	neural_pfns=[none], %[none,hebbian_w,hebbian,ojas_w,ojas,self_modulationV1,self_modulationV2,self_modulationV2,self_modulationV3,self_modulationV4,self_modulationV5,self_modulationV6,neuromodulation]
 	substrate_plasticities=[none],
 	substrate_linkforms = [l2l_feedforward],%[l2l_feedfrward,jordan_recurrent,fully_connected]

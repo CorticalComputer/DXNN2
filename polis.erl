@@ -37,7 +37,7 @@
 
 %%=========================================== API 
 sync()-> 
-	make:all([load]). 
+	make:all([native,load]).
 % A sync/1 function can compile and reload all the modules pertaining to the project within the folder.
 
 start() -> 

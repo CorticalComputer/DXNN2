@@ -149,7 +149,7 @@ log(Val)->
 			sgn(Val)*math:log(abs(Val))
 	end.
 
-sigmoid(Val)-> %(-1 : 1)--Der:Y*(1-Y)
+sigmoid(Val)-> %(0 : 1)--Der:Y*(1-Y)
 	V = case Val > 10 of
 		true ->
 			10;
@@ -161,7 +161,7 @@ sigmoid(Val)-> %(-1 : 1)--Der:Y*(1-Y)
 					Val
 			end
 	end,
-	2/(1+math:pow(2.71828183,-V)) - 1.
+	1/(1+math:exp(-V)).
 
 sigmoid1(Val)-> %(-1 : 1) -- Der:1/((1+abs(val))*(1+abs(val)))
 	Val/(1+abs(Val)).

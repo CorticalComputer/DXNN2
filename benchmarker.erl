@@ -23,9 +23,12 @@
 -include("records.hrl").
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Benchmark Options %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 -define(DIR,"benchmarks/").
--define(INIT_CONSTRAINTS,[#constraint{morphology=Morphology,connection_architecture=CA, population_selection_f=hof_competition,population_evo_alg_f=generational, neural_pfns=[none], agent_encoding_types=[neural], neural_afs=[tanh,cos,gaussian,linear,absolute], tuning_selection_fs=[dynamic_random]} || Morphology<-[forex_trader], CA<-[recurrent]]).
+-define(INIT_CONSTRAINTS,[#constraint{morphology=Morphology,connection_architecture=CA, population_selection_f=hof_competition,population_evo_alg_f=generational, neural_pfns=[none], agent_encoding_types=[neural], neural_afs=[{circuit,{static,[{tanh,2,static},{tanh,1,static}]}}], tuning_selection_fs=[dynamic_random]} || Morphology<-[pole_balancing], CA<-[recurrent]]).
+%neural_types=[{circuit,{static,[{tanh,2,static},{tanh,1,static}]}}] %[{circuit,{static|dynamic,[{NeuronType::tanh|sin|rbf|gaussian|gabor_2d, LayerSize::integer(), static|dynamic}]}} | standard]
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%Starts and ends Neural Networks with various preset parameters and options, and polls the logger for information about each run.		
+print_experiment(Experiment_Id)->
+	io:format("********~n~p~n*******",[mnesia:dirty_read({experiment,Experiment_Id})]).
+
 get_ekeys()->
 	io:format("--- Currently Stored Experiments ---~n"),
 	get_ekeys(mnesia:dirty_first(experiment)).
@@ -33,22 +36,23 @@ get_ekeys()->
 	get_ekeys('$end_of_table')->
 		ok;
 	get_ekeys(Key)->
-		io:format("~p~n",[Key]),
+		[E]=mnesia:dirty_read({experiment,Key}),
+		io:format("*~p~n Notes: ~p~n",[Key,E#experiment.notes]),
 		get_ekeys(mnesia:dirty_next(experiment,Key)).
-		
-print_experiment(Experiment_Id)->
-	io:format("********~n~p~n*******",[mnesia:dirty_read({experiment,Experiment_Id})]).
 
+%Starts and ends Neural Networks with various preset parameters and options, and polls the logger for information about each run.
 start(Id)->
+	start(Id,"No comment").
+start(Id,Notes)->
 	PMP = #pmp{
 		op_mode=[gt,validation,test],
 		population_id=test,
 		survival_percentage=0.5,
 		specie_size_limit=10,
-		init_specie_size=20,
+		init_specie_size=10,
 		polis_id = mathema,
 		generation_limit = 1000,
-		evaluations_limit = 10000,
+		evaluations_limit = 50000,
 		fitness_goal = inf
 	},
 	E=#experiment{
@@ -58,7 +62,7 @@ start(Id)->
 		init_constraints=?INIT_CONSTRAINTS,
 		progress_flag=in_progress,
 		run_index=1,
-		tot_runs=10,
+		tot_runs=100,
 		started={date(),time()},
 		interruptions=[]
 	},
@@ -329,8 +333,7 @@ write_Graphs([G|Graphs],Graph_Postfix)->
 	Morphology = G#graph.morphology,
 	U_G = G#graph{evaluation_Index=[500*Index || Index <-lists:seq(1,length(G#graph.avg_fitness))]},
 	{ok, File} = file:open(?DIR++"graph_"++atom_to_list(Morphology)++"_"++Graph_Postfix, write),
-	%io:format(File,"#Avg Fitness Vs Evaluations, Morphology:~p~n",[Morphology]),
-	%lists:foreach(fun({X,Y,Std}) -> io:format(File, "~p ~p ~p~n",[X,Y,Std]) end, lists:zip3(U_G#graph.evaluation_Index,U_G#graph.avg_fitness,U_G#graph.fitness_std)),
+
 	io:format(File,"#Avg Fitness Vs Evaluations, Morphology:~p",[Morphology]),
 	print_MultiObjectiveFitness(File,U_G#graph.evaluation_Index,U_G#graph.avg_fitness,U_G#graph.fitness_std),
 	
@@ -341,38 +344,24 @@ write_Graphs([G|Graphs],Graph_Postfix)->
 	lists:foreach(fun({X,Y,Std}) -> io:format(File, "~p ~p ~p~n",[X,Y,Std]) end, lists:zip3(U_G#graph.evaluation_Index,U_G#graph.avg_diversity,U_G#graph.diversity_std)),
 	
 	io:format(File,"~n~n# Max Fitness Vs Evaluations, Morphology:~p",[Morphology]),
-	%lists:foreach(fun({X,Y}) -> io:format(File, "~p ~p~n",[X,Y]) end, lists:zip(U_G#graph.evaluation_Index,U_G#graph.max_fitness)),
 	print_MultiObjectiveFitness(File,U_G#graph.evaluation_Index,U_G#graph.max_fitness),
 
 	io:format(File,"~n~n~n#Avg. Max Fitness Vs Evaluations, Morphology:~p",[Morphology]),
-	%lists:foreach(fun({X,Y}) -> io:format(File, "~p ~p~n",[X,Y]) end, lists:zip(U_G#graph.evaluation_Index,U_G#graph.max_fitness)),
 	print_MultiObjectiveFitness(File,U_G#graph.evaluation_Index,U_G#graph.maxavg_fitness),
-
-	io:format(File,"~n~n~n#Avg. Max Fitness Vs Evaluations, Morphology:~p",[Morphology]),
-	%lists:foreach(fun({X,Y}) -> io:format(File, "~p ~p~n",[X,Y]) end, lists:zip(U_G#graph.evaluation_Index,U_G#graph.max_fitness)),
-	%print_MultiObjectiveFitness(File,U_G#graph.evaluation_Index,U_G#graph.maxavg_fitness),
-	lists:foreach(fun({X,[Y],[Std]}) -> io:format(File, "~p ~p ~p~n",[X,Y,Std]) end, lists:zip3(U_G#graph.evaluation_Index,U_G#graph.maxavg_fitness,U_G#graph.maxavg_fitness_std)),
 	
-	io:format(File,"~n~n#Avg. Min Fitness Vs Evaluations, Morphology:~p",[Morphology]),
-	%lists:foreach(fun({X,Y}) -> io:format(File, "~p ~p~n",[X,Y]) end, lists:zip(U_G#graph.evaluation_Index,U_G#graph.min_fitness)),
+	io:format(File,"~n~n~n#Avg. Min Fitness Vs Evaluations, Morphology:~p",[Morphology]),
 	print_MultiObjectiveFitness(File,U_G#graph.evaluation_Index,U_G#graph.min_fitness),
 	
 	io:format(File,"~n~n~n#Specie-Population Turnover Vs Evaluations, Morphology:~p~n",[Morphology]),
 	lists:foreach(fun({X,Y}) -> io:format(File, "~p ~p~n",[X,Y]) end, lists:zip(U_G#graph.evaluation_Index,U_G#graph.evaluations)),
 	
-	%[io:format("{~p,~p,~p}~n",[A,B,C])||{A,B,C}<-lists:zip3(U_G#graph.evaluation_Index,U_G#graph.validation_fitness,U_G#graph.validation_fitness_std)],
 	io:format(File,"~n~n#Validation Avg Fitness Vs Evaluations, Morphology:~p",[Morphology]),
-	%lists:foreach(fun({X,Y}) -> io:format(File, "~p ~p~n",[X,Y]) end, lists:zip(U_G#graph.evaluation_Index,U_G#graph.validation_fitness)),
-	%lists:foreach(fun({X,[Y],[Std]}) -> io:format(File, "~p ~p ~p~n",[X,Y,Std]) end, lists:zip3(U_G#graph.evaluation_Index,U_G#graph.validation_fitness,U_G#graph.validation_fitness_std)),
-	%[io:format(File, "~p ~p ~p~n",[X,Y,Std])|| {X,Y1,Std1} <- lists:zip3(U_G#graph.evaluation_Index,U_G#graph.validation_fitness,U_G#graph.validation_fitness_std),[Y]=Y1,[Std]=Std1],
 	print_MultiObjectiveFitness(File,U_G#graph.evaluation_Index,U_G#graph.validation_fitness,U_G#graph.validation_fitness_std),
 	
 	io:format(File,"~n~n~n#Validation Max Fitness Vs Evaluations, Morphology:~p",[Morphology]),
-	%lists:foreach(fun({X,Y}) -> io:format(File, "~p ~p~n",[X,Y]) end, lists:zip(U_G#graph.evaluation_Index,U_G#graph.validationmax_fitness)),
 	print_MultiObjectiveFitness(File,U_G#graph.evaluation_Index,U_G#graph.validationmax_fitness),
 	
 	io:format(File,"~n~n~n#Validation Min Fitness Vs Evaluations, Morphology:~p",[Morphology]),
-	%lists:foreach(fun({X,Y}) -> io:format(File, "~p ~p~n",[X,Y]) end, lists:zip(U_G#graph.evaluation_Index,U_G#graph.validationmin_fitness)),
 	print_MultiObjectiveFitness(File,U_G#graph.evaluation_Index,U_G#graph.validationmin_fitness),
 	
 	file:close(File),
@@ -499,3 +488,43 @@ chg_mrph(Id,NewMorph)->
 	[A] = mnesia:dirty_read({agent,Id}),
 	mnesia:dirty_write((A#agent.constraint)#constraint{morphology=NewMorph}),
 	io:format("Ok: OldMorph:~p NewMorph:~p~n",[(A#agent.constraint)#constraint.morphology,NewMorph]).
+	
+vector_gt(V1,V2)->
+	vector_gt(V1,V2,0).
+vector_gt([A|V1],[B|V2],Acc)->
+	case A >= B of
+		true ->
+			vector_gt(V1,V2,(A-B)+Acc);
+		false ->
+			false
+	end;
+vector_gt([],[],Acc)->
+	Acc > 0;%If false then V1==V2, else V1 is at least as large as V2, and superior in some vector element.
+vector_gt(_,undefined,_Acc)->
+	false.
+
+vector_lt(V1,V2)->
+	vector_lt(V1,V2,0).
+vector_lt([A|V1],[B|V2],Acc)->
+	case A =< B of
+		true ->
+			vector_lt(V1,V2,(A-B)+Acc);
+		false ->
+			false
+	end;
+vector_lt([],[],Acc)->
+	Acc<0;
+vector_lt(_,undefined,_Acc)->
+	false.
+	
+vector_eq([A|V1],[B|V2])->
+	case A == B of
+		true ->
+			vector_eq(V1,V2);
+		false ->
+			false
+	end;
+vector_eq([],[])->
+	true;
+vector_eq(_,undefined)->
+	false.

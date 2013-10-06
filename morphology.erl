@@ -152,7 +152,7 @@ forex_trader(actuators)->
 		#actuator{name=fx_Trade,type=standard,scape={private,fx_sim},format=no_geo,vl=1,parameters=[]}
 	];
 forex_trader(sensors)->
-	PLI_Sensors=[#sensor{name=fx_PLI,type=standard,scape={private,fx_sim},format=no_geo,vl=HRes,parameters=[HRes,close]} || HRes<-[50]],
+	PLI_Sensors=[#sensor{name=fx_PLI,type=standard,scape={private,fx_sim},format=no_geo,vl=HRes,parameters=[HRes,close]} || HRes<-[100]],
 	PCI_Sensors = [#sensor{name=fx_PCI,type=standard,scape={private,fx_sim},format={symmetric,[HRes,VRes]},vl=HRes*VRes,parameters=[HRes,VRes]} || HRes <-[100], VRes<-[20]],
 	InternalSensors = [#sensor{name=fx_Internals,type=standard,scape={private,fx_sim},format=no_geo,vl=3,parameters=[3]}],%[Long|Short|Void],Value
 	PLI_Sensors.%++InternalSensors.

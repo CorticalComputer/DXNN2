@@ -28,7 +28,7 @@ dot_product(IAcc,IPIdPs)->
 dot_product([{IPId,Input}|IAcc],[{IPId,WeightsP}|IPIdPs],Acc)->
 	Dot = dot(Input,WeightsP,0),
 	dot_product(IAcc,IPIdPs,Dot+Acc);
-dot_product([],[{bias,[{Bias,_LPs}]}],Acc)->
+dot_product([],[{bias,[{Bias,_PDB,_LP,_LPs}]}],Acc)->
 	Acc + Bias;
 dot_product([],[],Acc)->
 	Acc.
@@ -41,7 +41,7 @@ dot_product([],[],Acc)->
 %	dot(_Input,[])->
 %		0.
 		
-		dot([I|Input],[{W,_LPs}|WeightsP],Acc) ->
+		dot([I|Input],[{W,_PDW,_LP,_LPs}|WeightsP],Acc) ->
 			dot(Input,WeightsP,I*W+Acc);
 		dot([],[],Acc)->
 			Acc.
@@ -74,12 +74,12 @@ mult_product(IAcc,IPIdPs)->
 mult_product([{IPId,Input}|IAcc],[{IPId,WeightsP}|IPIdPs],Acc)->
 	Dot = mult(Input,WeightsP,1),
 	mult_product(IAcc,IPIdPs,Dot*Acc);
-mult_product([],[{bias,[{Bias,_LPs}]}],Acc)->
+mult_product([],[{bias,[{Bias,_PDB,_LP,_LPs}]}],Acc)->
 	Acc * Bias;
 mult_product([],[],Acc)->
 	Acc.
 
-	mult([I|Input],[{W,_LPs}|Weights],Acc) ->
+	mult([I|Input],[{W,_PDW,_LP,_LPs}|Weights],Acc) ->
 		mult(Input,Weights,I*W*Acc);
 	mult([],[],Acc)->
 		Acc.

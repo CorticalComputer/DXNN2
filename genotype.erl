@@ -174,12 +174,23 @@ construct_SeedNN(Cx_Id,Generation,SpecCon,Sensors,Actuators)->
 
 		construct_Neuron(Cx_Id,Generation,SpecCon,N_Id,Input_Specs,Output_Ids)-> 
 			PF = {PFName,NLParameters} = generate_NeuronPF(SpecCon#constraint.neural_pfns),
-			Input_IdPs = create_InputIdPs(PFName,Input_Specs,[]), 
+			AF = generate_NeuronAF(SpecCon#constraint.neural_afs),
+			%io:format("AF:~p~n",[AF]),
+			Input_IdPs = case AF of
+				{circuit,InitSpec} ->
+					%io:format("InitSpec:~p~n",[InitSpec]),
+					%N_TotIVL = lists:sum([IVL||{_Input_Id,IVL}<-Input_Specs]),
+					circuit:create_InitCircuit(Input_Specs,InitSpec);
+					%create_circuit(N_TotIVL,[1+random:uniform(round(math:sqrt(N_TotIVL))),1]);
+				_ ->
+					create_InputIdPs(PFName,Input_Specs,[])
+			end,
+			%io:format("Input_IdPs:~p~n",[Input_IdPs]),
 			Neuron=#neuron{
 				id=N_Id,
 				cx_id = Cx_Id,
 				generation=Generation,
-				af=generate_NeuronAF(SpecCon#constraint.neural_afs),
+				af=AF,
 				pf = PF,
 				aggr_f=generate_NeuronAggrF(SpecCon#constraint.neural_aggr_fs),
 				input_idps=Input_IdPs,
@@ -197,8 +208,13 @@ construct_SeedNN(Cx_Id,Generation,SpecCon,Sensors,Actuators)->
 				create_NeuralWeightsP(_PFName,0,Acc) ->
 					Acc; 
 				create_NeuralWeightsP(PFName,Index,Acc) ->
-					W = random:uniform()-0.5, 
-					create_NeuralWeightsP(PFName,Index-1,[{W,plasticity:PFName(weight_parameters)}|Acc]). 
+					WP = {random:uniform()-0.5,0,0,plasticity:PFName(weight_parameters)},
+					create_NeuralWeightsP(PFName,Index-1,[WP|Acc]). 
+					
+					create_weight(none)->
+						{random:uniform()-0.5,0,0};
+					create_weight(PFName)->
+						random:uniform()-0.5.
 %Each neuron record is composed by the construct_Neuron/6 function. The construct_Neuron/6 creates the Input list from the tuples [{Id,Weights}...] using the vector lengths specified in the Input_Specs list. The create_InputIdPs/3 function uses create_NeuralWeightsP/2 to generate a tuple list with random weights in the range of -0.5 to 0.5, and plasticity parameters dependent on the PF function. The activation function that the neuron uses is chosen randomly from the neural_afs list within the constraint record passed to the construct_Neuron/6 function. construct_Neuron uses calculate_ROIds/3 to extract the list of recursive connection ids from the Output_Ids passed to it. Once the neuron record is filled in, it is saved to the database.
 		
 		generate_NeuronAF(Activation_Functions)-> 
@@ -317,7 +333,7 @@ update_fingerprint(Agent_Id)->
 		lists:reverse(Acc).
 %generalize_EvoHist/2 generalizes the evolutionary history tuples by removing the unique element ids. Two neurons which are using exactly the same activation function, located exactly in the same layer, and using exactly the same weights will still have different unique ids, thus these ids must be removed to produce a more general set of tuples. There are 3 types of tuples in evo_hist list, with 3, 2 and 1 element ids. Once the evolutionary history list is generalized, it is returned to the caller.
 
-update_NNTopologySummary(Agent_Id)->
+update_NNTopologySummary(Agent_Id)->%TODO: If the node is a circuit, then tot_neurons has to be calculated differently
 	A = mnesia:read({agent,Agent_Id}),
 	Cx_Id = A#agent.cx_id,
 	Cx = mnesia:read({cortex,Cx_Id}),
@@ -334,28 +350,28 @@ update_NNTopologySummary(Agent_Id)->
 	Topology_Summary.
 		
 	get_NodeSummary(N_Ids)->
-		get_NodeSummary(N_Ids,0,0,0,{0,0,0,0,0,0,0,0,0}).
+		get_NodeSummary(N_Ids,0,0,0,[]).
 	get_NodeSummary([N_Id|N_Ids],ILAcc,OLAcc,ROAcc,FunctionDistribution)->
 		N = genotype:read({neuron,N_Id}),
-		IL_Count = length(N#neuron.input_idps),
+		AF = N#neuron.af,
+		%io:format("AF:~p~n Inpt_IdPs:~p~n",[AF,N#neuron.input_idps]),
+		IL_Count = case AF of
+			{circuit,_} ->
+				length((N#neuron.input_idps)#circuit.i);
+			_ ->
+				length(N#neuron.input_idps)
+		end,
 		OL_Count = length(N#neuron.output_ids),
 		RO_Count = length(N#neuron.ro_ids),
-		AF = N#neuron.af,
-		{TotTanh,TotSin,TotCos,TotGaussian,TotAbsolute,TotSgn,TotLog,TotSqrt,TotLin} = FunctionDistribution,
-		U_FunctionDistribution= case AF of
-			tanh ->{TotTanh+1,TotSin,TotCos,TotGaussian,TotAbsolute,TotSgn,TotLog,TotSqrt,TotLin};
-			sin ->{TotTanh,TotSin+1,TotCos,TotGaussian,TotAbsolute,TotSgn,TotLog,TotSqrt,TotLin};
-			cos ->{TotTanh,TotSin,TotCos+1,TotGaussian,TotAbsolute,TotSgn,TotLog,TotSqrt,TotLin};
-			gaussian->{TotTanh,TotSin,TotCos,TotGaussian+1,TotAbsolute,TotSgn,TotLog,TotSqrt,TotLin};
-			absolute->{TotTanh,TotSin,TotCos,TotGaussian,TotAbsolute+1,TotSgn,TotLog,TotSqrt,TotLin};
-			sgn ->{TotTanh,TotSin,TotCos,TotGaussian,TotAbsolute,TotSgn+1,TotLog,TotSqrt,TotLin};
-			log ->{TotTanh,TotSin,TotCos,TotGaussian,TotAbsolute,TotSgn,TotLog+1,TotSqrt,TotLin};
-			sqrt ->{TotTanh,TotSin,TotCos,TotGaussian,TotAbsolute,TotSgn,TotLog,TotSqrt+1,TotLin};
-			linear ->{TotTanh,TotSin,TotCos,TotGaussian,TotAbsolute,TotSgn,TotLog,TotSqrt,TotLin+1};
-			Other -> exit("Unknown AF, please update AF_Distribution tuple with:~p~n.",[Other])
+		U_FunctionDistribution = case lists:keyfind(AF,1,FunctionDistribution) of
+			{AF,Count} ->
+				lists:keyreplace(AF,1,FunctionDistribution,{AF,Count+1});
+			false ->
+				[{AF,1}|FunctionDistribution]
 		end,
 		get_NodeSummary(N_Ids,IL_Count+ILAcc,OL_Count+OLAcc,RO_Count+ROAcc,U_FunctionDistribution);
 	get_NodeSummary([],ILAcc,OLAcc,ROAcc,FunctionDistribution)->
+		%io:format("FunctoinDistribution:~p~n",[FunctionDistribution]),
 		{ILAcc,OLAcc,ROAcc,FunctionDistribution}.
 
 read(TnK)->
@@ -480,8 +496,7 @@ clone_Agent(Agent_Id,CloneAgent_Id)->
 				});
 			Substrate_Id ->
 				Substrate = read({substrate,A#agent.substrate_id}),
-				[CloneSubstrate_Id] = map_ids(IdsNCloneIds,
-[A#agent.substrate_id],[]),
+				[CloneSubstrate_Id] = map_ids(IdsNCloneIds,[A#agent.substrate_id],[]),
 				CloneCPP_Ids = map_ids(IdsNCloneIds,Substrate#substrate.cpp_ids,[]),
 				CloneCEP_Ids = map_ids(IdsNCloneIds,Substrate#substrate.cep_ids,[]),
 				clone_neurons(IdsNCloneIds,Cx#cortex.neuron_ids),
@@ -566,7 +581,14 @@ clone_Agent(Agent_Id,CloneAgent_Id)->
 		N = read({neuron,N_Id}),
 		CloneN_Id = ets:lookup_element(TableName,N_Id,2),
 		CloneCx_Id = ets:lookup_element(TableName,N#neuron.cx_id,2),
-		CloneInput_IdPs =  [{ets:lookup_element(TableName,I_Id,2),WeightsP}|| {I_Id,WeightsP} <- N#neuron.input_idps],
+		CloneInput_IdPs =  case N#neuron.af of
+			{circuit,_} ->
+				C = N#neuron.input_idps,
+				U_I=[{ets:lookup_element(TableName,I_Id,2),IVL}|| {I_Id,IVL} <- C#circuit.i],
+				C#circuit{i=U_I};
+			_ ->
+				[{ets:lookup_element(TableName,I_Id,2),WeightsP}|| {I_Id,WeightsP} <- N#neuron.input_idps]
+		end,
 		CloneInput_IdPs_Modulation =  [{ets:lookup_element(TableName,I_Id,2),WeightsP}|| {I_Id,WeightsP} <- N#neuron.input_idps_modulation],
 		CloneOutput_Ids = [ets:lookup_element(TableName,O_Id,2)|| O_Id <- N#neuron.output_ids],
 		CloneRO_Ids =[ets:lookup_element(TableName,RO_Id,2)|| RO_Id <- N#neuron.ro_ids],

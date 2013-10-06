@@ -153,7 +153,7 @@ loop(S,gt)->
 				HiFi->
 					HiFi
 			end,	
-			{U_HighestFitness,U_Attempt}=case vec1_dominates_vec2(Fitness,HighestFitness,?MIN_PIMPROVEMENT) of %case Fitness > S#state.highest_fitness of %vec1_dominates_vec2(Avg_Fitness,HighestFitness,?MIN_PIMPROVEMENT)
+			{U_HighestFitness,U_Attempt}=case vec1_dominates_vec2(Fitness,HighestFitness,?MIN_PIMPROVEMENT) of%or random:uniform() < 0.001) of %case Fitness > S#state.highest_fitness of %vec1_dominates_vec2(Avg_Fitness,HighestFitness,?MIN_PIMPROVEMENT)
 				true ->
 					[NPId ! {self(),weight_backup} || NPId <- S#state.npids],
 					A=genotype:dirty_read({agent,S#state.agent_id}),
@@ -436,10 +436,17 @@ loop(S,test)->
 		Input_IdPs_Modulation = N#neuron.input_idps_modulation,
 		Output_Ids = N#neuron.output_ids,
 		RO_Ids = N#neuron.ro_ids,
-		SI_PIdPs = convert_IdPs2PIdPs(IdsNPIds,Input_IdPs,[]),
+		SI_PIdPs = case AFName of
+			{circuit,_}->
+				U_I=convert_IdPs2PIdPs(IdsNPIds,Input_IdPs#circuit.i,[]),
+				Input_IdPs#circuit{i=U_I};
+			_ ->
+				convert_IdPs2PIdPs(IdsNPIds,Input_IdPs,[])
+		end,
 		MI_PIdPs = convert_IdPs2PIdPs(IdsNPIds,Input_IdPs_Modulation,[]),
 		O_PIds = [ets:lookup_element(IdsNPIds,Id,2) || Id <- Output_Ids],
 		RO_PIds = [ets:lookup_element(IdsNPIds,Id,2) || Id <- RO_Ids],
+		%io:format("{self(),{NId,Cx_PId,AFName,PFName,AggrFName,HeredityType,SI_PIdPs,MI_PIdPs,O_PIds,RO_PIds}}::~n~p~n",[{self(),{NId,Cx_PId,AFName,PFName,AggrFName,HeredityType,SI_PIdPs,MI_PIdPs,O_PIds,RO_PIds}}]),
 		NPId ! {self(),{NId,Cx_PId,AFName,PFName,AggrFName,HeredityType,SI_PIdPs,MI_PIdPs,O_PIds,RO_PIds}},
 		link_Neurons(Neuron_Ids,IdsNPIds,HeredityType);
 	link_Neurons([],_IdsNPIds,HeredityType)->
@@ -484,8 +491,15 @@ backup_genotype(IdsNPIds,NPIds)->
 
 	update_genotype(IdsNPIds,[{N_Id,SI_PIdPs,MI_PIdPs,PF}|WeightPs])->
 		N = genotype:dirty_read({neuron,N_Id}),
-		Updated_SI_IdPs = convert_PIdPs2IdPs(IdsNPIds,SI_PIdPs,[]),
-		Updated_MI_IdPs = convert_PIdPs2IdPs(IdsNPIds,MI_PIdPs,[]),
+		Updated_SI_IdPs = case N#neuron.af of
+			{circuit,_} ->
+				U_I = [{ets:lookup_element(IdsNPIds,PId,2),IVL}||{PId,IVL}<-SI_PIdPs#circuit.i],
+				SI_PIdPs#circuit{i=U_I};
+			_ ->
+				[{ets:lookup_element(IdsNPIds,PId,2),WeightsP}|| {PId,WeightsP}<-SI_PIdPs]
+				%convert_PIdPs2IdPs(IdsNPIds,SI_PIdPs,[])
+		end,
+		Updated_MI_IdPs = [{ets:lookup_element(IdsNPIds,PId,2),WeightsP}|| {PId,WeightsP}<-MI_PIdPs], %convert_PIdPs2IdPs(IdsNPIds,MI_PIdPs,[]),
 		U_N = N#neuron{input_idps = Updated_SI_IdPs,input_idps_modulation=Updated_MI_IdPs,pf=PF},
 		genotype:write(U_N),
 		%io:format("N:~p~n U_N:~p~n Genotype:~p~n U_Genotype:~p~n",[N,U_N,Genotype,U_Genotype]),

@@ -49,8 +49,13 @@ wsize_proportional(Parameter,N_Ids,Generation)->
 
 	extract_NWeightCount([N_Id|RecGenN_Ids],Acc)->
 		N = genotype:dirty_read({neuron,N_Id}),
-		Input_IdPs = N#neuron.input_idps,
-		TotWeights = lists:sum([length(Weights) || {_IId,Weights} <- Input_IdPs]),
+		TotWeights = case N#neuron.af of
+			{circuit,_}->
+				circuit:tot_weights(N#neuron.input_idps);
+			_ ->
+				Input_IdPs = N#neuron.input_idps,
+				lists:sum([length(Weights) || {_IId,Weights} <- Input_IdPs])
+		end,
 		extract_NWeightCount(RecGenN_Ids,TotWeights+Acc);
 	extract_NWeightCount([],Acc)->
 		Acc.
