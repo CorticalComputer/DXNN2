@@ -23,7 +23,31 @@
 -include("records.hrl").
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Benchmark Options %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 -define(DIR,"benchmarks/").
--define(INIT_CONSTRAINTS,[#constraint{morphology=Morphology,connection_architecture=CA, population_selection_f=hof_competition,population_evo_alg_f=generational, neural_pfns=[none], agent_encoding_types=[neural], neural_afs=[{circuit,{static,[{tanh,2,static},{tanh,1,static}]}}], tuning_selection_fs=[dynamic_random]} || Morphology<-[pole_balancing], CA<-[recurrent]]).
+-define(INIT_CONSTRAINTS,[
+	#constraint{
+		morphology=Morphology,
+		connection_architecture=CA,
+		population_selection_f=hof_competition,
+		population_evo_alg_f=generational,
+		neural_pfns=[none],
+		agent_encoding_types=[neural],
+		%neural_afs=[{circuit,{micro,[#layer{neurode_type=tanh,tot_neurodes=2,dynamics=dynamic},#layer{neurode_type=tanh,tot_neurodes=1,dynamics=static}]}}],
+		neural_afs=[tanh],
+%		neural_afs = [
+%			{circuit,#layer{neurode_type=tanh,tot_neurodes=10,dynamics=dynamic,type=dae}},
+%			{circuit,#layer{neurode_type=sigmoid,tot_neurodes=10,dynamics=dynamic,type=dae}},
+%			{circuit,#layer{neurode_type=all,tot_neurodes=10,dynamics=dynamic,type=dae}},
+%			{circuit,#layer{neurode_type=sin,tot_neurodes=10,dynamics=dynamic,type=dae}}
+%		],
+%		neural_afs = [{circuit,#layer{neurode_type=tanh,tot_neurodes=1,type=standard}}],
+%		neural_afs = [{circuit,#layer{neurode_type=tanh,tot_neurodes=10,dynamics=dynamic,type=dae}}],
+		tuning_selection_fs=[dynamic_random]
+	} 
+	|| 
+		Morphology<-[llvm_phase_ordering],
+		CA<-[recurrent]
+	
+]).
 %neural_types=[{circuit,{static,[{tanh,2,static},{tanh,1,static}]}}] %[{circuit,{static|dynamic,[{NeuronType::tanh|sin|rbf|gaussian|gabor_2d, LayerSize::integer(), static|dynamic}]}} | standard]
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 print_experiment(Experiment_Id)->
@@ -62,7 +86,7 @@ start(Id,Notes)->
 		init_constraints=?INIT_CONSTRAINTS,
 		progress_flag=in_progress,
 		run_index=1,
-		tot_runs=100,
+		tot_runs=10,
 		started={date(),time()},
 		interruptions=[]
 	},

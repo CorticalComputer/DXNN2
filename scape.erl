@@ -200,7 +200,6 @@ pb_sim(ExoSelf_PId)->
 pole2_balancing(ExoSelf_PId,void)->
 	receive
 		{From_PId,sense, [Parameter]}->%io:format("Sense request received:~p~n",[From_PId]),
-		
 			{CPosition,CVel,PAngle1,PVel1,PAngle2,PVel2,TimeStep,GoalTimeSteps,MaxTimeSteps,FitnessAcc}=case get({pole2_balancing,ExoSelf_PId}) of
 				undefined ->
 					{A,B,C} = now(),
@@ -240,6 +239,7 @@ pole2_balancing(ExoSelf_PId,void)->
 			From_PId ! {self(),percept,SenseSignal},
 			scape:pole2_balancing(ExoSelf_PId,void);
 		{From_PId,push,[Damping_Flag,DPB_Flag],[F]}->
+			%io:format("Push:~p~n",[{Damping_Flag,DPB_Flag,F}]),
 			{CPosition,CVel,PAngle1,PVel1,PAngle2,PVel2,TimeStep,GoalTimeSteps,MaxTimeSteps,FitnessAcc} =  get({pole2_balancing,ExoSelf_PId}),
 			AL = 2*math:pi()*(36/360),
 			{NextCPosition,NextCVel,NextPAngle1,NextPVel1,NextPAngle2,NextPVel2}=sm_DoublePole(F*10,CPosition,CVel,PAngle1,PVel1,PAngle2,PVel2,2),
@@ -257,7 +257,7 @@ pole2_balancing(ExoSelf_PId,void)->
 			end,
 			case(NextPAngle1 > AL)or (NextPAngle1 < -AL) or (NextPAngle2 > AL) or (NextPAngle2 < -AL) or (CPosition > 2.4) or (CPosition < -2.4) or (TimeStep >= MaxTimeSteps)of
 				true ->
-					erase({pole2_balancing,ExoSelf_PId}),
+					erase({pole2_balancing,ExoSelf_PId}),%io:format("Erased~n"),
 					case TimeStep >= GoalTimeSteps of
 						true ->
 							From_PId ! {self(),0,goal_reached},
@@ -492,3 +492,9 @@ fx_sim(Exoself_PId)->
 
 epitopes(Exoself_PId)->
 	epitopes:sim(Exoself_PId).
+	
+scape_GTSA(Exoself_PId)->
+	scape_GTSA:start(Exoself_PId).
+	
+scape_LLVMPhaseOrdering(Exoself_PId)->
+	scape_LLVMPhaseOrdering:start(Exoself_PId).

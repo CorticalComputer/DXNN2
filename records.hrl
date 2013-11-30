@@ -37,6 +37,7 @@
 -record(population,{id, polis_id, specie_ids=[], morphologies=[], innovation_factor, evo_alg_f, fitness_postprocessor_f, selection_f, trace=#trace{}, seed_agent_ids=[],seed_specie_ids=[]}).
 -record(stat,{morphology,specie_id,avg_neurons,std_neurons,avg_fitness,std_fitness,max_fitness,min_fitness,validation_fitness,test_fitness,avg_diversity,evaluations,time_stamp}).
 -record(topology_summary,{type,tot_neurons,tot_n_ils,tot_n_ols,tot_n_ros,af_distribution}).
+-record(signature,{generalized_Pattern,generalized_EvoHist,generalized_Sensors,generalized_Actuators,topology_summary}).
 
 %type [standard,dae,ae], noise [float()], lp_decay [float()], lp_min[float()], lp_max [float()], memory [list()], memory_size {max_size::int(),counter::int()}
 -record(circuit,{
@@ -93,6 +94,8 @@
 
 -record(layer2,{
 	id,%Z::float()
+	i_pidps=[],
+	o_pids=[],
 	noise,
 	type=dae,%{convolutional,VL}|{pooling,max|avg|min}|fully_connected|standard
 	neurode_type=tanh,%tanh|sin|cos|rbf|cplx1/2/3/4/5/6/7|gabor_2d
@@ -103,6 +106,7 @@
 	input,%[float()]
 	output,%[float()]
 	ivl,%int()
+	ovl,
 	receptive_field=full,%full|int()
 	step=0,%int()
 %	encoder=[],%[neurode], this is the neurodes element
@@ -151,15 +155,16 @@
 	heredity_types = [darwinian], %[darwinian,lamarckian]
 	mutation_operators= [
 		%{mutate_weights,1},
-		{add_bias,1}, 
+		{add_bias,10}, 
 		%{remove_bias,1}, 
 %		{mutate_af,1}, 
-		{add_outlink,4}, 
-		{add_inlink,4}, 
-		{add_neuron,4}, 
-		{outsplice,4},
+		{add_outlink,40}, 
+		{add_inlink,40}, 
+		{add_neuron,40}, 
+		{outsplice,40},
+		%{insplice,40},
 		{add_sensorlink,1},
-		{add_actuatorlink,1},
+		%{add_actuatorlink,1},
 		{add_sensor,1}, 
 		{add_actuator,1},
 %		{mutate_plasticity_parameters,1},
@@ -199,7 +204,8 @@
 	generation_limit = 100,
 	evaluations_limit = 100000,
 	fitness_goal = inf,
-	benchmarker_pid
+	benchmarker_pid,
+	committee_pid
 }).
 
 %%%SCAPE RELATED%%%

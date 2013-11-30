@@ -22,7 +22,7 @@
 -include("records.hrl").
 -define(SAT_LIMIT,math:pi()*10).
 -define(OUTPUT_SAT_LIMIT,1).
--define(RO_SIGNAL,0).
+-define(RO_SIGNAL,get_ROSig(AF,SI_PIdPs)).
 -record(state,{
 	id,
 	cx_pid,
@@ -37,7 +37,6 @@
 	mi_pids=[],
 	mi_pidps_current=[],
 	mi_pidps_backup=[],
-	%pf,
 	pf_current,
 	pf_backup,
 	output_pids=[],
@@ -50,7 +49,7 @@ prep(ExoSelf_PId) ->
 	random:seed(now()),
 	receive 
 		{ExoSelf_PId,{Id,Cx_PId,AF,PF,AggrF,HeredityType,SI_PIdPs,MI_PIdPs,Output_PIds,RO_PIds}} ->
-			fanout(RO_PIds,{self(),forward,[?RO_SIGNAL]}),
+			fanout(RO_PIds,{self(),forward,?RO_SIGNAL}),
 			SI_PIds = case AF of
 				{circuit,_}->
 					lists:append([IPId || {IPId,_IVL} <- SI_PIdPs#circuit.i, IPId =/= bias],[ok]);
@@ -111,9 +110,10 @@ loop(S,ExoSelf_PId,[ok],[ok],SIAcc,MIAcc)->
 %					postprocessor:PostProc(functions:AF(signal_integrator:SigInt(preprocessor:PreProc(DIV),WeightsP)))
 					%SAggregation_Product = signal_aggregator:AggrF(Ordered_SIAcc,SI_PIdPs),
 					%SOutput = sat(functions:AF(SAggregation_Product),?OUTPUT_SAT_LIMIT),%Saturation is done at -1 and 1
+					%io:format("Ordered_SIAcc,SI_PIdPs:~p~n",[{Ordered_SIAcc,SI_PIdPs}]),
 					[sat(functions:AF(signal_aggregator:AggrF(Ordered_SIAcc,SI_PIdPs)),?OUTPUT_SAT_LIMIT)]
-					%io:format("SOutput:~p~n",[SOutput]),
 			end,
+			%io:format("SOutput:~p~n",[SOutput]),
 			case PFName of
 				none ->
 					U_S=S;
@@ -143,10 +143,22 @@ loop(S,ExoSelf_PId,[ok],[ok],SIAcc,MIAcc)->
 loop(S,ExoSelf_PId,[SI_PId|SI_PIds],[MI_PId|MI_PIds],SIAcc,MIAcc)->
 	receive
 		{SI_PId,forward,Input}->
-			%io:format("Id:~p Input:~p~n",[S#state.id,Input]),
+			%io:format("Neuron Id:~p Input:~p~n",[S#state.id,Input]),
 			loop(S,ExoSelf_PId,SI_PIds,[MI_PId|MI_PIds],[{SI_PId,Input}|SIAcc],MIAcc);
 		{MI_PId,forward,Input}->
 			loop(S,ExoSelf_PId,[SI_PId|SI_PIds],MI_PIds,SIAcc,[{MI_PId,Input}|MIAcc]);
+		{O_PId,backprop,ErrorSignal}->
+			SI_PIdPs = S#state.si_pidps_current,
+			U_SI_PIdPs=case S#state.af of
+				{circuit,_InitSpec}->
+					circuit:BP_Type(SI_PIdPs,ErrorSignal);
+					{U_Layers2,_ErrorList} = layers_backprop(lists:reverse(U_Layers1),OutputError_List,[]),
+					C#circuit{layers=U_Layers2,err_acc=U_ErrAcc}
+				_ ->
+					backprop(SI_PIds,ErrorSignal)
+			end,
+			U_S = S#state{si_pidps_current=U_SI_PIdPs},
+			loop(U_S,ExoSelf_PId,[SI_PId|SI_PIds],[MI_PId|MI_PIds],SIAcc,MIAcc);
 		{ExoSelf_PId,weight_backup}->
 			U_S=case S#state.heredity_type of
 				darwinian ->
@@ -192,9 +204,11 @@ loop(S,ExoSelf_PId,[SI_PId|SI_PIds],[MI_PId|MI_PIds],SIAcc,MIAcc)->
 			neuron:flush_buffer(),
 			ExoSelf_PId ! {self(),ready},
 			RO_PIds = S#state.ro_pids,
+			AF = S#state.af,
+			SI_PIdPs = S#state.si_pidps_current,
 			receive 
 				{ExoSelf_PId, reset}->
-					fanout(RO_PIds,{self(),forward,[?RO_SIGNAL]});
+					fanout(RO_PIds,{self(),forward,?RO_SIGNAL});
 				{ExoSelf_PId,terminate}->
 					ok
 			end,
@@ -226,6 +240,15 @@ loop(S,ExoSelf_PId,[SI_PId|SI_PIds],[MI_PId|MI_PIds],SIAcc,MIAcc)->
 			done
 	end.
 %The flush_buffer/0 cleans out the element's inbox.
+	
+	get_ROSig(AF,SI_PIdPs)->
+		case AF of
+			{circuit,_}->
+				[0.0 || _<-lists:seq(1,SI_PIdPs#circuit.ovl)];
+			_ ->
+				[0.0]
+		end.
+	
 perturb_IPIdPs(Spread,[])->[];
 perturb_IPIdPs(Spread,Input_PIdPs)->
 	%Tot_Weights=lists:sum([length(WeightsP) || {_Input_PId,WeightsP}<-Input_PIdPs]),
@@ -274,3 +297,6 @@ perturb_IPIdPs(_Spread,_MP,[],Acc)->
 perturb_PF(Spread,{PFName,PFParameters})->
 	U_PFParameters = [sat(PFParameter+(random:uniform()-0.5)*Spread,-?SAT_LIMIT,?SAT_LIMIT)||PFParameter<-PFParameters],
 	{PFName,PFParameters}.
+	
+backprop(SI_PIds,ErrorSignal)->
+	void.

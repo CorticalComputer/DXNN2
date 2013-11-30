@@ -28,6 +28,7 @@ gen(ExoSelf_PId,Node)->
 prep(ExoSelf_PId) ->
 	receive 
 		{ExoSelf_PId,{Id,Cx_PId,Scape,SensorName,VL,Parameters,Fanout_PIds,OpMode}} ->
+			io:format("Fanout_PIds:~p~n",[Fanout_PIds]),
 			put(opmode,OpMode),
 			loop(Id,ExoSelf_PId,Cx_PId,Scape,SensorName,VL,Parameters,Fanout_PIds)
 	end.
@@ -75,6 +76,19 @@ xor_GetInput(ExoSelf_PId,VL,_Parameters,Scape)->
 	end.
 %xor_GetInput/2 contacts the XOR simulator and requests the sensory vector, which in this case should be a binary vector of length 2. The sensor checks that the incoming sensory signal, the percept, is indeed of length 2. If the vector length differs, then this is printed to the console and a dummy vector of appropriate length is constructed.
 
+pb_GetInput(ExoSelf_PId,VL,[committee|Parameters],Scape)->%A committee member, has to redirect its requests through the committee it belongs to.
+	Committee_PId = whereis(committee),
+	Committee_PId ! {self(),{Committee_PId,sense,Parameters}},
+	receive
+		{Committee_PId,percept,SensoryVector}->
+			case length(SensoryVector)==VL of
+				true ->
+					SensoryVector;
+				false ->
+					io:format("Error in sensor:pb_GetInput/3, VL:~p SensoryVector:~p~n",[VL,SensoryVector]),
+					lists:duplicate(VL,0)
+			end
+	end;
 pb_GetInput(ExoSelf_PId,VL,Parameters,Scape)->
 	Scape ! {self(),sense,Parameters},
 	receive
@@ -455,3 +469,24 @@ abc_pred(Exoself_Id,VL,Parameters,Scape)->
 			86 -> 0.9;
 			85 -> 1
 		end.
+
+general_predictor(Exoself_Id,VL,[committee|Parameters],_Scape)->
+	Committee_PId = whereis(committee),
+	Committee_PId ! {self(),get_percept,get_window,[get(opmode)|Parameters]},
+	receive 
+		{Committee_PId,percept,Percept}->
+			Percept
+	end;
+general_predictor(Exoself_Id,VL,Parameters,Scape)->
+	Scape ! {self(),get_percept,get_window,[get(opmode)|Parameters]},
+	receive 
+		{_From,percept,Percept}->
+			Percept
+	end.
+	
+get_BitCodeStatistics(Exoself_Id,VL,Parameters,Scape)->
+	Scape ! {self(),get_percept,get_BitCodeStatistics,[get(opmode)|Parameters]},
+	receive 
+		{_From,percept,Percept}->
+			Percept
+	end.

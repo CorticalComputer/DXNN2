@@ -63,7 +63,7 @@ construct_Cortex(Agent_Id,Generation,SpecCon,Encoding_Type,SPlasticity,SLinkform
 			%N_Ids=construct_InitialNeuroLayer(Cx_Id,Generation,SpecCon,Sensors,Actuators,[],[]),
 			[write(S) || S <- Sensors],
 			[write(A) || A <- Actuators],
-			{N_Ids,Pattern} = construct_SeedNN(Cx_Id,Generation,SpecCon,Sensors,Actuators),
+			{N_Ids,Pattern} = construct_SeedNN(Cx_Id,Generation,SpecCon,Sensors,Actuators,[]),
 			S_Ids = [S#sensor.id || S<-Sensors],
 			A_Ids = [A#actuator.id || A<-Actuators],
 			Cortex = #cortex{
@@ -89,7 +89,7 @@ construct_Cortex(Agent_Id,Generation,SpecCon,Encoding_Type,SPlasticity,SLinkform
 			%N_Ids=construct_InitialNeuroLayer(Cx_Id,Generation,SpecCon,Substrate_CPPs,Substrate_CEPs,[],[]),
 			[write(Substrate_CPP) || Substrate_CPP <- Substrate_CPPs],
 			[write(Substrate_CEP) || Substrate_CEP <- Substrate_CEPs],
-			{N_Ids,Pattern} = construct_SeedNN(Cx_Id,Generation,SpecCon,Substrate_CPPs,Substrate_CEPs),
+			{N_Ids,Pattern} = construct_SeedNN(Cx_Id,Generation,SpecCon,Substrate_CPPs,Substrate_CEPs,[]),
 			%io:format("Sensors:~p~n Actuators:~p~n Substate_CPPs:~p~n Substrate_CEPs:~p~n",[Sensors,Actuators,Substrate_CPPs,Substrate_CEPs]),
 			S_Ids = [S#sensor.id || S<-Sensors],
 			A_Ids = [A#actuator.id || A<-Actuators],
@@ -117,104 +117,104 @@ construct_Cortex(Agent_Id,Generation,SpecCon,Encoding_Type,SPlasticity,SLinkform
 	{Cx_Id,Pattern,Substrate_Id}.
 %construct_Cortex/3 generates a new Cx_Id, extracts the morphology from the Constraint record passed to it in SpecCon, and then extracts the initial sensors and actuators for that morphology. After the sensors and actuators are extracted, the function calls construct_InitialNeuroLayer/7, which creates a single layer of neurons connected to the specified sensors and actuators, and returns the ids of the created neurons. Finally, the sensors and actuator ids are extracted from the sensors and actuators, and the cortex record is composed and stored to the database.
 
-construct_SeedNN(Cx_Id,Generation,SpecCon,Sensors,Actuators)->
-	TotLayers=random:uniform(1),%change this to create random number of layers
-	TotInputVals = lists:sum([S#sensor.vl || S <- Sensors]),
-	TotOutputVals= lists:sum([A#actuator.vl || A <- Actuators]),
-	TotIOVals = TotInputVals + TotOutputVals,
-	
-	LayerDensities=lists:reverse([TotOutputVals|[random:uniform(round(math:sqrt(TotIOVals))) || _<- lists:seq(1,TotLayers-1)]]),
-	StepSize = 2/(TotLayers+2-1),
-	{Output_NIds,[_|Ids],Pattern}=construct_HiddenLayers(Cx_Id,Generation,LayerDensities,-1+StepSize,StepSize,[S#sensor.id||S<-Sensors],SpecCon,[],[]),
-	N_Ids = lists:flatten(Ids),
-	connect_to_actuators(Generation,Output_NIds,Actuators),
-	{N_Ids,Pattern}.
-	
-		construct_HiddenLayers(Cx_Id,Generation,[TotNeurons|LayerDensities],LayerIndex,StepSize,PrevLayer,SpecCon,Acc,PatternAcc)->
-			N_Ids = [{{LayerIndex,genotype:generate_UniqueId()},neuron} || _ <- lists:seq(1,TotNeurons)],
-			[genotype:construct_Neuron(Cx_Id,Generation,SpecCon,N_Id,[],[]) || N_Id <- N_Ids],
-			[genome_mutator:link_FromElementToElement(Generation,From_Id,To_Id) || From_Id <- PrevLayer, To_Id<-N_Ids], %Links all current ones to previous layer ones
-			construct_HiddenLayers(Cx_Id,Generation,LayerDensities,LayerIndex+StepSize,StepSize,N_Ids,SpecCon,[PrevLayer|Acc],[{LayerIndex,N_Ids}|PatternAcc]);
-		construct_HiddenLayers(Cx_Id,Generation,[],_LayerIndex,_StepSize,PrevLayer,SpecCon,Acc,PatternAcc)->
-			{PrevLayer,lists:reverse([PrevLayer|Acc]),lists:reverse(PatternAcc)}.
-			
-		connect_to_actuators(Generation,NIds,[A|Actuators])->
-			{Output_NIds,Remainder_NIds} = lists:split(A#actuator.vl,NIds),
-			[genome_mutator:link_FromElementToElement(Generation,From_Id,A#actuator.id) || From_Id <- Output_NIds],
-			connect_to_actuators(Generation,Remainder_NIds,Actuators);
-		connect_to_actuators(Generation,[],[])->
-			ok.
-			
-	construct_InitialNeuroLayer(Cx_Id,Generation,SpecCon,Sensors,[A|Actuators],AAcc,NIdAcc)->
-		N_Ids = [{{0,Unique_Id},neuron}|| Unique_Id<-generate_ids(A#actuator.vl,[])],
-		U_Sensors=construct_InitialNeurons(Cx_Id,Generation,SpecCon,N_Ids,Sensors,[A#actuator.id]),
-		U_A = A#actuator{fanin_ids=N_Ids},
-		construct_InitialNeuroLayer(Cx_Id,Generation,SpecCon,U_Sensors,Actuators,[U_A|AAcc],lists:append(N_Ids,NIdAcc));
-	construct_InitialNeuroLayer(_Cx_Id,_Generation,_SpecCon,Sensors,[],AAcc,NIdAcc)->
-		[write(S) || S <- Sensors],
-		[write(A) || A <- AAcc],
-		NIdAcc.
-%construct_InitialNeuroLayer/7 creates a set of neurons for each Actuator in the actuator list. The neurons are initialized in the construct_InitialNeurons/6, where they are connected to the actuator, and from a random subset of the sensors passed to the function. The construct_InitialNEurons/6 function returns the updated sensors, some of which have now an updated set of fanout_ids which includes the new neuron ids they were connected to. The actuator's fanin_ids is then updated to include the neuron ids that were connected to it. Once all the actuators have been connected to, the sensors and the actuators are written to the database, and the set of neuron ids created within the function is returned to the caller.
-
-		construct_InitialNeurons(Cx_Id,Generation,SpecCon,[N_Id|N_Ids],Sensors,Output_Ids)->
-			case random:uniform() >= 0.5 of
-				true ->%is_record(R,actuator
-					S = lists:nth(random:uniform(length(Sensors)),Sensors),
-					U_Sensors = lists:keyreplace(S#sensor.id, 2, Sensors, S#sensor{fanout_ids=[N_Id|S#sensor.fanout_ids]}),
-					Input_Specs = [{S#sensor.id,S#sensor.vl}];
-				false ->
-					U_Sensors = [S#sensor{fanout_ids=[N_Id|S#sensor.fanout_ids]} || S <-Sensors],
-					Input_Specs=[{S#sensor.id,S#sensor.vl}||S<-Sensors]
-			end,
-			construct_Neuron(Cx_Id,Generation,SpecCon,N_Id,Input_Specs,Output_Ids),
-			construct_InitialNeurons(Cx_Id,Generation,SpecCon,N_Ids,U_Sensors,Output_Ids);
-		construct_InitialNeurons(_Cx_Id,_Generation,_SpecCon,[],Sensors,_Output_Ids)->
-			Sensors.
-%construct_InitialNeurons/6 accepts the list of sensors and a single actuator, connects each neuron to the actuator, and randomly chooses whether to connect it from all the sensors or a subset of the given sensors. Once all the neurons have been connected to the actuator and from the sensors, the updated sensors, whose fanout_ids have been updated with the ids of the neurons, are returned to the caller.
-
-		construct_Neuron(Cx_Id,Generation,SpecCon,N_Id,Input_Specs,Output_Ids)-> 
+construct_SeedNN(Cx_Id,Generation,SpecCon,Sensors,[A|Actuators],Acc)->
+%Standard neurons results in a single layer connected directly from all sensors and to the set of actuators.
+%If only circuits are present (not simply micro of ovl=1), then a single circuit of Vl = actuator.vl is created for each actuator. And then another set of circuits connected to these.
+%Outsplice can be applied to anything, except for circuits outputing to actuators, unless they are replaced with circuits of the same VL.
+	%io:format("SpecCon#constraint.neural_afs:~p~n",[SpecCon#constraint.neural_afs]),
+	case (length([1|| {circuit,_} <- SpecCon#constraint.neural_afs]) == 0) of
+		false ->
+			N2_Id = {{0.99,genotype:generate_UniqueId()},neuron},
+			InitSpec = #layer{neurode_type=tanh,tot_neurodes=A#actuator.vl,dynamics=dynamic,type=standard},
+			AF = {circuit,InitSpec},% = generate_NeuronAF([{circuit,IS}||{circuit,IS}<-SpecCon#constraint.neural_afs]),
 			PF = {PFName,NLParameters} = generate_NeuronPF(SpecCon#constraint.neural_pfns),
-			AF = generate_NeuronAF(SpecCon#constraint.neural_afs),
-			%io:format("AF:~p~n",[AF]),
-			Input_IdPs = case AF of
-				{circuit,InitSpec} ->
-					%io:format("InitSpec:~p~n",[InitSpec]),
-					%N_TotIVL = lists:sum([IVL||{_Input_Id,IVL}<-Input_Specs]),
-					circuit:create_InitCircuit(Input_Specs,InitSpec);
-					%create_circuit(N_TotIVL,[1+random:uniform(round(math:sqrt(N_TotIVL))),1]);
-				_ ->
-					create_InputIdPs(PFName,Input_Specs,[])
-			end,
-			%io:format("Input_IdPs:~p~n",[Input_IdPs]),
-			Neuron=#neuron{
-				id=N_Id,
+			Input_IdPs = circuit:create_Circuit([],InitSpec),
+			Neuron2=#neuron{
+				id=N2_Id,
 				cx_id = Cx_Id,
 				generation=Generation,
 				af=AF,
 				pf = PF,
 				aggr_f=generate_NeuronAggrF(SpecCon#constraint.neural_aggr_fs),
 				input_idps=Input_IdPs,
-				output_ids=Output_Ids,
-				ro_ids = calculate_ROIds(N_Id,Output_Ids,[])
+				output_ids=[],
+				ro_ids = []
 			},
-			write(Neuron).
+			write(Neuron2),
+			N1_Id = {{0,genotype:generate_UniqueId()},neuron},
+			construct_Neuron(Cx_Id,Generation,SpecCon,N1_Id,[],[]),
+			link_Neuron(Generation,[S#sensor.id||S<-Sensors],N1_Id,[N2_Id]),
+			genome_mutator:link_FromElementToElement(Generation,N2_Id,A#actuator.id),
+			N_Ids = [N1_Id,N2_Id];
+		true ->
+			N_Ids = [{{0,genotype:generate_UniqueId()},neuron}||_<-lists:seq(1,A#actuator.vl)],
+			Result=[construct_Neuron(Cx_Id,Generation,SpecCon,N_Id,[],[])||N_Id<-N_Ids],
+			[link_Neuron(Generation,[S#sensor.id||S<-Sensors],N_Id,[A#actuator.id])||N_Id<-N_Ids]
+	end,
+	construct_SeedNN(Cx_Id,Generation,SpecCon,Sensors,Actuators,lists:append(N_Ids,Acc));
+construct_SeedNN(_Cx_Id,_Generation,_SpecCon,_Sensors,[],Acc)->
+	{lists:reverse(Acc),create_InitPattern(Acc)}.
 
-			create_InputIdPs(PF,[{Input_Id,Input_VL}|Input_IdPs],Acc) ->
-				WeightsP = create_NeuralWeightsP(PF,Input_VL,[]),
-				create_InputIdPs(PF,Input_IdPs,[{Input_Id,WeightsP}|Acc]); 
-			create_InputIdPs(_PF,[],Acc)-> 
-				Acc.
+	create_InitPattern([Id|Ids])->
+		{{LI,_},_} = Id,
+		create_InitPattern(Ids,LI,[Id],[]).
+	create_InitPattern([Id|Ids],CurIndex,CurIndexAcc,PatternAcc)->
+		{{LI,_},_} = Id,
+		case LI == CurIndex of
+			true ->
+				create_InitPattern(Ids,CurIndex,[Id|CurIndexAcc],PatternAcc);
+			false ->
+				create_InitPattern(Ids,LI,[Id],[{CurIndex,CurIndexAcc}|PatternAcc])
+		end;
+	create_InitPattern([],CurIndex,CurIndexAcc,PatternAcc)->
+		lists:sort([{CurIndex,CurIndexAcc}|PatternAcc]).	
+	
+	link_Neuron(Generation,From_Ids,N_Id,To_Ids)->
+		%io:format("Link_Neuron:~p~n",[{From_Ids,N_Id,To_Ids}]),
+		[genome_mutator:link_FromElementToElement(Generation,From_Id,N_Id) || From_Id <-From_Ids],
+		[genome_mutator:link_FromElementToElement(Generation,N_Id,To_Id) || To_Id <- To_Ids].
+
+	construct_Neuron(Cx_Id,Generation,SpecCon,N_Id,Input_Specs,Output_Ids)-> 
+		PF = {PFName,NLParameters} = generate_NeuronPF(SpecCon#constraint.neural_pfns),
+		AF = generate_NeuronAF(SpecCon#constraint.neural_afs),
+		%io:format("AF:~p~n",[AF]),
+		Input_IdPs = case AF of
+			{circuit,InitSpec} ->
+				%io:format("InitSpec:~p~n",[InitSpec]),
+				circuit:create_Circuit(Input_Specs,InitSpec);
+			_ ->
+				create_InputIdPs(PFName,Input_Specs,[])
+		end,
+		%io:format("Input_IdPs:~p~n",[Input_IdPs]),
+		Neuron=#neuron{
+			id=N_Id,
+			cx_id = Cx_Id,
+			generation=Generation,
+			af=AF,
+			pf = PF,
+			aggr_f=generate_NeuronAggrF(SpecCon#constraint.neural_aggr_fs),
+			input_idps=Input_IdPs,
+			output_ids=Output_Ids,
+			ro_ids = calculate_ROIds(N_Id,Output_Ids,[])
+		},
+		write(Neuron).
+
+		create_InputIdPs(PF,[{Input_Id,Input_VL}|Input_IdPs],Acc) ->
+			WeightsP = create_NeuralWeightsP(PF,Input_VL,[]),
+			create_InputIdPs(PF,Input_IdPs,[{Input_Id,WeightsP}|Acc]); 
+		create_InputIdPs(_PF,[],Acc)-> 
+			Acc.
 			 
-				create_NeuralWeightsP(_PFName,0,Acc) ->
-					Acc; 
-				create_NeuralWeightsP(PFName,Index,Acc) ->
-					WP = {random:uniform()-0.5,0,0,plasticity:PFName(weight_parameters)},
-					create_NeuralWeightsP(PFName,Index-1,[WP|Acc]). 
-					
-					create_weight(none)->
-						{random:uniform()-0.5,0,0};
-					create_weight(PFName)->
-						random:uniform()-0.5.
+			create_NeuralWeightsP(_PFName,0,Acc) ->
+				Acc; 
+			create_NeuralWeightsP(PFName,Index,Acc) ->
+				WP = {random:uniform()-0.5,0,0,plasticity:PFName(weight_parameters)},
+				create_NeuralWeightsP(PFName,Index-1,[WP|Acc]). 
+				
+				create_weight(none)->
+					{random:uniform()-0.5,0,0};
+				create_weight(PFName)->
+					random:uniform()-0.5.
 %Each neuron record is composed by the construct_Neuron/6 function. The construct_Neuron/6 creates the Input list from the tuples [{Id,Weights}...] using the vector lengths specified in the Input_Specs list. The create_InputIdPs/3 function uses create_NeuralWeightsP/2 to generate a tuple list with random weights in the range of -0.5 to 0.5, and plasticity parameters dependent on the PF function. The activation function that the neuron uses is chosen randomly from the neural_afs list within the constraint record passed to the construct_Neuron/6 function. construct_Neuron uses calculate_ROIds/3 to extract the list of recursive connection ids from the Output_Ids passed to it. Once the neuron record is filled in, it is saved to the database.
 		
 		generate_NeuronAF(Activation_Functions)-> 
@@ -280,23 +280,23 @@ random_element(List)->
 %The random_element/1 function accepts a list as input, and returns a single, randomly chosen element as output.
 
 calculate_OptimalSubstrateDimension(Sensors,Actuators)->
-		S_Formats = [S#sensor.format || S<-Sensors],
-		A_Formats = [A#actuator.format || A<-Actuators],
-		extract_maxdim(S_Formats++A_Formats,[]) + 2.
+	S_Formats = [S#sensor.format || S<-Sensors],
+	A_Formats = [A#actuator.format || A<-Actuators],
+	extract_maxdim(S_Formats++A_Formats,[]) + 2.
 %
 		
-		extract_maxdim([F|Formats],Acc)->
-			DS=case F of
-				{symmetric,Dims}->
-					length(Dims);
-				no_geo ->
-					1;
-				undefined ->
-					1
-			end,
-			extract_maxdim(Formats,[DS|Acc]);
-		extract_maxdim([],Acc)->
-			lists:max(Acc).
+	extract_maxdim([F|Formats],Acc)->
+		DS=case F of
+			{symmetric,Dims}->
+				length(Dims);
+			no_geo ->
+				1;
+			undefined ->
+				1
+		end,
+		extract_maxdim(Formats,[DS|Acc]);
+	extract_maxdim([],Acc)->
+		lists:max(Acc).
 %
 	
 update_fingerprint(Agent_Id)->
@@ -353,12 +353,16 @@ update_NNTopologySummary(Agent_Id)->%TODO: If the node is a circuit, then tot_ne
 		get_NodeSummary(N_Ids,0,0,0,[]).
 	get_NodeSummary([N_Id|N_Ids],ILAcc,OLAcc,ROAcc,FunctionDistribution)->
 		N = genotype:read({neuron,N_Id}),
-		AF = N#neuron.af,
+		%AF = N#neuron.af,
 		%io:format("AF:~p~n Inpt_IdPs:~p~n",[AF,N#neuron.input_idps]),
-		IL_Count = case AF of
-			{circuit,_} ->
+		IL_Count = case N#neuron.af of
+			{circuit,{micro,_}}->
+				AF = micro,
 				length((N#neuron.input_idps)#circuit.i);
-			_ ->
+			{circuit,Layer} ->
+				AF=Layer#layer.type,
+				length((N#neuron.input_idps)#circuit.i);
+			AF ->
 				length(N#neuron.input_idps)
 		end,
 		OL_Count = length(N#neuron.output_ids),
@@ -396,6 +400,9 @@ write(R)->
 	end,
 	mnesia:transaction(F). 
 
+dirty_write(R)->
+	mnesia:dirty_write(R).
+
 delete(TnK)->
 	F = fun()->
 		mnesia:delete(TnK)
@@ -428,6 +435,48 @@ print(Agent_Id)->
 	mnesia:transaction(F).
 %print/1 accepts an agent's id, and prints out the complete genotype of that agent.
 
+print_ListForm(Agent_Id)->
+	%{ok, File_Output} = file:open(FileName, write),
+	{ok, File_Output} = file:open(atom_to_list(Agent_Id)++".agent", write),
+	A = dirty_read({agent,Agent_Id}),
+	Cx = dirty_read({cortex,A#agent.cx_id}),
+	Sensors = [dirty_read({sensor,Id}) || Id <- Cx#cortex.sensor_ids],
+	Neurons = [dirty_read({neuron,Id}) || Id <- Cx#cortex.neuron_ids],
+	Actuators = [dirty_read({actuator,Id}) || Id <- Cx#cortex.actuator_ids],
+	print_Sensors(Sensors,File_Output),
+	print_Neurons(Neurons,File_Output),
+	print_Actuators(Actuators,File_Output).
+	
+		
+		
+	print_Sensors([S|Sensors],File_Output)->
+		io:format(File_Output,"~p:",[S#sensor.id]),
+		%[io:format(File_Output," ~p",[N_Id])||N_Id<-S#sensor.fanout_ids],
+		io:format(File_Output,"~n",[]),
+		print_Sensors(Sensors,File_Output);
+	print_Sensors([],_File_Output)->
+		ok.
+		
+	print_Neurons([N|Neurons],File_Output)->
+		io:format(File_Output,"~p:",[N#neuron.id]),
+		[{io:format(File_Output," ~p#",[From_Id]),[io:format(File_Output," ~p",[W]) || {W,_,_,_}<-WeightsP]} ||{From_Id,WeightsP}<-N#neuron.input_idps],
+		io:format(File_Output,"~n",[]),
+		%io:format(File_Output,"~p:",[N#neuron.id]),
+		%[io:format(File_Output," ~p",[O_Id])||O_Id<-N#neuron.output_ids],
+		%io:format(File_Output,"~n",[]),
+		print_Neurons(Neurons,File_Output);
+	print_Neurons([],_File_Output)->
+		ok.
+
+
+	print_Actuators([A|Actuators],File_Output)->
+		io:format(File_Output,"~p:",[A#actuator.id]),
+		[io:format(File_Output," ~p",[I_Id])||I_Id<-A#actuator.fanin_ids],
+		io:format(File_Output,"~n",[]),
+		print_Actuators(Actuators,File_Output);
+	print_Actuators([],_File_Output)->
+		ok.
+	
 delete_Agent(Agent_Id)->
 	[A] = mnesia:read({agent,Agent_Id}),
 	[Cx] = mnesia:read({cortex,A#agent.cx_id}),
@@ -669,7 +718,19 @@ create_test()->
 	Specie_Id = test,
 	Agent_Id = test,
 	%SpecCon = #constraint{},
-	SpecCon = #constraint{morphology=forex_trader,connection_architecture=recurrent, population_evo_alg_f=generational,neural_afs=[tanh],agent_encoding_types=[substrate],substrate_plasticities=[none],neural_pfns=[none]},
+	SpecCon = #constraint{
+		morphology=llvm_phase_ordering,
+		connection_architecture=recurrent,
+		population_evo_alg_f=generational,
+		neural_afs=[tanh],
+		%neural_afs=[{circuit,{micro,[#layer{neurode_type=tanh,tot_neurodes=2,dynamics=dynamic},#layer{neurode_type=tanh,tot_neurodes=1,dynamics=static}]}}],
+		%neural_afs = [{circuit,#layer{neurode_type=tanh,tot_neurodes=1,type=standard}}],
+		%neural_afs = [{circuit,#layer{neurode_type=tanh,tot_neurodes=10,dynamics=dynamic,type=dae}}],
+		agent_encoding_types=[neural],
+		substrate_plasticities=[none],
+		neural_pfns=[none],
+		heredity_types = [darwinian] %[darwinian,lamarckian]
+	},
 	F = fun()->
 		case genotype:read({agent,test}) of
 			undefined ->

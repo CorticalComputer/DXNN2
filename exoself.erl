@@ -30,9 +30,11 @@
 	cx_pid,
 	specie_id,
 	spids=[],
+	sids=[],
 	npids=[],
 	nids=[],
 	apids=[],
+	aids=[],
 	private_scape_pids=[],
 	public_scape_pids=[],
 	highest_fitness,
@@ -122,9 +124,11 @@ prep(Agent_Id,PM_PId,OpMode)->
 		cx_pid=Cx_PId,
 		specie_id=A#agent.specie_id,
 		spids=SPIds,
+		sids=SIds,
 		npids=NPIds,
 		nids=NIds,
 		apids=APIds,
+		aids=AIds,
 		substrate_pid=Substrate_PId,
 		cpp_pids = CPP_PIds,
 		cep_pids = CEP_PIds,
@@ -162,11 +166,11 @@ loop(S,gt)->
 						fitness=Fitness,
 						main_fitness = Main_Fitness
 					}),
-					backup_genotype(S#state.idsNpids,S#state.npids),
+					backup_genotype(S#state.idsNpids,S#state.spids,S#state.npids,S#state.apids),
 					{Fitness,0};
 				false ->
-					Perturbed_NIdPs=get(perturbed),
-					[ets:lookup_element(IdsNPIds,NId,2) ! {self(),weight_restore} || {NId,_Spread} <- Perturbed_NIdPs],
+					Perturbed_IdPs=get(perturbed),
+					[ets:lookup_element(IdsNPIds,Id,2) ! {self(),weight_restore} || {Id,_Spread} <- Perturbed_IdPs],
 					{HighestFitness,S#state.attempt+1}
 			end,
 			[PId ! {self(), reset_prep} || PId <- S#state.npids],
@@ -474,11 +478,54 @@ loop(S,test)->
 		{SPIds,NPIds,APIds}.
 %The link_Cortex/2 function sends to the already spawned and waiting cortex its state, composed of the PId lists and other information which is needed by the cortex to link up and interface with other elements in the distributed phenotype.
 
-backup_genotype(IdsNPIds,NPIds)->
+backup_genotype(IdsNPIds,SPIds,NPIds,APIds)->
+	%backup_Sensors(IdsNPIds,SPIds),
+	%backup_Actuators(IdsNPIds,APIds),
+	%backup_Neurons(IdsNPIds,NPIds),
 	Neuron_IdsNWeights = get_backup(NPIds,[]),
 	update_genotype(IdsNPIds,Neuron_IdsNWeights),
 	io:format("Finished updating genotype~n").
-
+	
+	backup_Sensors(_IdsNPIds,_SPIds)->
+		ok.
+	
+	backup_Actuators(IdsNPIds,[APId|APIds])->
+		APId ! {self(),get_backup},
+		receive
+			{APId,C}->
+				AId = ets:lookup_element(IdsNPIds,APId,2),
+				A = genotype:dirty_read({actuator,AId}),
+				U_I = [{ets:lookup_element(IdsNPIds,PId,2),IVL}||{PId,IVL}<-C#circuit.i],
+				U_C=C#circuit{i=U_I},
+				U_A = A#actuator{fanin_ids=U_C},
+				genotype:dirty_write(U_A)
+		end,
+		backup_Actuators(IdsNPIds,APIds);
+	backup_Actuators(_IdsNPIds,[])->
+		%io:format("Finished backing up Actuators~n").
+		ok.
+	
+	backup_Neurons(IdsNPIds,[NPId|NPIds])->
+		NPId ! {self(),get_backup},
+		receive
+			{NPId,N_Id,SI_PIdPs,MI_PIdPs,PF}->
+				N = genotype:dirty_read({neuron,N_Id}),
+				Updated_SI_IdPs = case N#neuron.af of
+					{circuit,_} ->
+						U_I = [{ets:lookup_element(IdsNPIds,PId,2),IVL}||{PId,IVL}<-SI_PIdPs#circuit.i],
+						SI_PIdPs#circuit{i=U_I};
+					_ ->
+						[{ets:lookup_element(IdsNPIds,PId,2),WeightsP}|| {PId,WeightsP}<-SI_PIdPs]
+						%convert_PIdPs2IdPs(IdsNPIds,SI_PIdPs,[])
+				end,
+				Updated_MI_IdPs = [{ets:lookup_element(IdsNPIds,PId,2),WeightsP}|| {PId,WeightsP}<-MI_PIdPs], %convert_PIdPs2IdPs(IdsNPIds,MI_PIdPs,[]),
+				U_N = N#neuron{input_idps = Updated_SI_IdPs,input_idps_modulation=Updated_MI_IdPs,pf=PF},
+				genotype:write(U_N)
+		end,
+		backup_Neurons(IdsNPIds,NPIds);
+	backup_Neurons(_IdsNPIds,[])->
+		io:format("Finished backing up Neurons~n").
+	
 	get_backup([NPId|NPIds],Acc)->
 		NPId ! {self(),get_backup},
 		receive

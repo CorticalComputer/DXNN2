@@ -107,7 +107,7 @@ mutate(Agent_Id)->
 				{atomic,_} ->
 					apply_ESMutators(Agent_Id,MutationIndex-1);
 				Error ->
-					io:format("******** Error:~p~nRetrying with new Mutation...~n",[Error]),
+					io:format("******** Mutation Canceled:~p~n Retrying with new Mutation...~n",[Error]),
 					apply_ESMutators(Agent_Id,MutationIndex-1)
 			end.
 %apply_ESMutators/2 with uniform distribution chooses a random evolutionary strategy mutation operator from the ?ES_MUTATORS list of such functions, and applies it to the agent. Whether the mutation succcessful or not, the function counts down the total number of mutation operators left to apply. This is to ensure that if the researcher set for each such evolutionary strategy to be static, having only one available mutatable parameter for every agent, the system will eventually try to mutate the strategy TotMutations number of times, and then return to the caller.
@@ -120,7 +120,7 @@ mutate(Agent_Id)->
 			{atomic,_} ->
 				apply_Mutators(Agent_Id,MutationIndex-1);
 			Error ->
-				io:format("******** Error:~p~nRetrying with new Mutation...~n",[Error]),
+				io:format("******** Mutation Canceled:~p~nRetrying with new Mutation...~n",[Error]),
 				apply_Mutators(Agent_Id,MutationIndex)
 		end.
 %apply_Mutators/2 applies the set number of successfull mutation operators to the Agent. If a mutaiton operator exits with an error, the function tries another mutaiton operator. It is only after a sucessfull mutation operator is applied that the MutationIndex is decremented.
@@ -211,8 +211,8 @@ mutate_weights(Agent_Id)->
 	N = genotype:read({neuron,N_Id}),
 	Input_IdPs = N#neuron.input_idps,
 	U_Input_IdPs = case N#neuron.af of
-		{circuit,InitSpec} ->
-			{_CircuitLayersSpecs,U_Layers}=circuit:perturb_weights(Input_IdPs#circuit.layers,math:pi(),Input_IdPs#circuit.layers_spec),
+		{circuit,_InitSpec} ->
+			U_Layers=circuit:perturb_weights(Input_IdPs#circuit.layers,math:pi()),
 			Input_IdPs#circuit{layers=U_Layers};
 		_ ->
 			perturb_IdPs(Input_IdPs)
@@ -267,10 +267,10 @@ add_CircuitNode(Agent_Id)->
 	N_Id = lists:nth(random:uniform(length(NId_Pool)),NId_Pool),	
 	[N] = mnesia:read({neuron,N_Id}),
 	case N#neuron.af of
-		{circuit,InitSpec} ->
+		{circuit,_InitSpec} ->
 			C = N#neuron.input_idps,
-			{U_CircuitLayersSpec,U_Layers}=circuit:add_neurode(C#circuit.layers,void,C#circuit.layers_spec),
-			U_C = C#circuit{layers=U_Layers,layers_spec=U_CircuitLayersSpec},
+			U_Layers=circuit:add_neurode(C#circuit.layers,void),
+			U_C = C#circuit{layers=U_Layers},
 			U_N = N#neuron{input_idps = U_C},
 %			mnesia:write(U_N),
 %			update_EvoHist(DX_Id,add_CircuitNode,void,N_Id,void,void,void)
@@ -280,7 +280,7 @@ add_CircuitNode(Agent_Id)->
 			genotype:write(U_N),
 			genotype:write(U_A);
 		_ ->
-			exit("******** ERROR: Not a circuit type neuron, can not execute: add_CircuitNode(DX_Id,Cx_Id)~n")
+			exit("******** Mutation Canceled: Not a circuit type neuron, can not execute: add_CircuitNode(DX_Id,Cx_Id)~n")
 	end.
 
 add_CircuitLayer(Agent_Id)->
@@ -292,10 +292,10 @@ add_CircuitLayer(Agent_Id)->
 	N_Id = lists:nth(random:uniform(length(NId_Pool)),NId_Pool),	
 	[N] = mnesia:read({neuron,N_Id}),
 	case N#neuron.af of
-		{circuit,InitSpec} ->
+		{circuit,_InitSpec} ->
 			C = N#neuron.input_idps,
-			{U_CircuitLayersSpec,U_Layers}=circuit:add_layer(C#circuit.layers,void,C#circuit.layers_spec),
-			U_C = C#circuit{layers=U_Layers,layers_spec=U_CircuitLayersSpec},
+			U_Layers=circuit:add_layer(C#circuit.layers,void),
+			U_C = C#circuit{layers=U_Layers},
 			U_N = N#neuron{input_idps = U_C},
 %			mnesia:write(U_N),
 %			update_EvoHist(DX_Id,add_layer,void,N_Id,void,void,void)
@@ -305,7 +305,7 @@ add_CircuitLayer(Agent_Id)->
 			genotype:write(U_N),
 			genotype:write(U_A);
 		_ ->
-			exit("******** ERROR: Not a circuit type neuron, can not execute: add_CircuitLayer(DX_Id,Cx_Id)~n")
+			exit("******** Mutation Canceled: Not a circuit type neuron, can not execute: add_CircuitLayer(DX_Id,Cx_Id)~n")
 	end.
 
 
@@ -325,8 +325,7 @@ add_bias(Agent_Id)->
 		{circuit,_InitSpec} ->
 			C = N#neuron.input_idps,
 			Layers = C#circuit.layers,
-			CircuitLayersSpec = C#circuit.layers_spec,
-			{_CircuitLayersSpec,U_Layers} = circuit:add_bias(Layers,void,CircuitLayersSpec),
+			U_Layers = circuit:add_bias(Layers,void),
 			U_C = C#circuit{layers=U_Layers},
 			U_N = N#neuron{
 				input_idps = U_C,
@@ -350,7 +349,7 @@ add_bias(Agent_Id)->
 					genotype:write(U_N),
 					genotype:write(U_A);
 				{true,_,_,_} ->
-					exit("********ERROR:add_bias:: This Neuron already has a bias in input_idps.");
+					exit("******** Mutation Canceled:add_bias:: This Neuron already has a bias in input_idps.");
 				{false,_,_,_} ->
 					U_SI_IdPs = lists:append(SI_IdPs,[{bias,[{random:uniform()-0.5,0,0.1,plasticity:PFName(weight_parameters)}]}]),
 					U_N = N#neuron{
@@ -381,8 +380,7 @@ remove_bias(Agent_Id)->
 		{circuit,_InitSpec} ->
 			C = N#neuron.input_idps,
 			Layers = C#circuit.layers,
-			CircuitLayersSpec = C#circuit.layers_spec,
-			{_CircuitLayersSpec,U_Layers} = circuit:remove_bias(Layers,void,CircuitLayersSpec),
+			U_Layers = circuit:remove_bias(Layers,void),
 			U_C = C#circuit{layers=U_Layers},
 			U_N = N#neuron{
 				input_idps = U_C,
@@ -406,7 +404,7 @@ remove_bias(Agent_Id)->
 					genotype:write(U_N),
 					genotype:write(U_A);
 				{false,_,_,_} ->
-					exit("********ERROR:remove_bias:: This Neuron does not have a bias in input_idps.");
+					exit("******** Mutation Canceled:remove_bias:: This Neuron does not have a bias in input_idps.");
 				{true,_,_,_} ->%Remove synaptic bias
 					U_SI_IdPs = lists:keydelete(bias,1,SI_IdPs),
 					U_N = N#neuron{
@@ -433,7 +431,7 @@ mutate_af(Agent_Id)->
 	AF = N#neuron.af,
 	case (A#agent.constraint)#constraint.neural_afs -- [AF] of
 		[] ->
-			exit("********ERROR:mutate_af:: There are no other activation functions to use.");
+			exit("******** Mutation Canceled:mutate_af:: There are no other activation functions to use.");
 		Activation_Functions ->
 			NewAF = lists:nth(random:uniform(length(Activation_Functions)),Activation_Functions),
 			U_N = N#neuron{af=NewAF,generation=Generation},
@@ -457,7 +455,7 @@ mutate_pf(Agent_Id)->
 	{PFName,_NLParameters} = N#neuron.pf,
 	case (A#agent.constraint)#constraint.neural_pfns -- [PFName] of
 		[] ->
-			exit("********ERROR:mutate_pf:: There are no other plasticity functions to use.");
+			exit("******** Mutation Canceled:mutate_pf:: There are no other plasticity functions to use.");
 		Other_PFNames ->
 			New_PFName = lists:nth(random:uniform(length(Other_PFNames)),Other_PFNames),
 			New_NLParameters = plasticity:New_PFName(neural_parameters),
@@ -501,7 +499,7 @@ mutate_aggrf(Agent_Id)->
 	AggrF = N#neuron.aggr_f,
 	case (A#agent.constraint)#constraint.neural_aggr_fs -- [AggrF] of
 		[] ->
-			exit("********ERROR:mutate_aggrf:: There are no other aggregation functions to use.");
+			exit("******** Mutation Canceled:mutate_aggrf:: There are no other aggregation functions to use.");
 		Aggregation_Functions ->
 			NewAggrF = lists:nth(random:uniform(length(Aggregation_Functions)),Aggregation_Functions),
 			U_N = N#neuron{aggr_f=NewAggrF,generation=Generation},
@@ -529,11 +527,16 @@ link_FromNeuronToNeuron(Generation,From_NeuronId,To_NeuronId)->
 	%Generation = A#agent.generation,
 %From Partf
 	FromN = genotype:read({neuron,From_NeuronId}),
+	FromOVL = case FromN#neuron.af of
+		{circuit,_} ->
+			(FromN#neuron.input_idps)#circuit.ovl;
+		_ ->
+			1
+	end,
 	U_FromN = link_FromNeuron(FromN,To_NeuronId,Generation),
 	genotype:write(U_FromN),
 %To Part
 	ToN = genotype:read({neuron,To_NeuronId}),%We read it afterwards, in the case that it's the same Element. Thus we do not overwrite the earlier changes.
-	FromOVL = 1,
 	U_ToN = link_ToNeuron(From_NeuronId,FromOVL,ToN,Generation),
 	genotype:write(U_ToN).
 %link_FromNeuronToNeuron/3 establishes a link from neuron with id From_NeuronId, to a neuron with id To_NeuronId. The function then calls link_FromNeuron/4, which establishes the link on the From_NeuronId's side. The updated neuron associated with the From_NeuronId is then written to database. To decide how long the weight list that is going to be added to the To_NeuronId's input_idps, the function calculates From_NeuronId's output vector length. Since the connection is from a neuron, FromOVL is set to 1. link_ToNeuron/4 is then called, and the link is established on the To_NeuronId's side. Finally, the updated neuron associated with the id To_NeuronId is written to database. The order of reading the FromN and ToN neuron records from the database is important. It is essential that ToN is read after the U_FromN is written to database, in the case that From_NeuronId and To_NeuronId refer to the same neuron (a recurrent connection from the neuron to itself). If both neurons are read at the same time for example before the links are established, then the link established in the U_FromN will be overwritten when the U_ToN is written to file. Thus order is important in this function.
@@ -568,6 +571,7 @@ link_FromNeuronToNeuron(Generation,From_NeuronId,To_NeuronId)->
 			_ ->
 				ToN#neuron.input_idps
 		end,
+		%io:format("ToSI_IdPs:~p~n",[ToSI_IdPs]),
 		ToMI_IdPs = ToN#neuron.input_idps_modulation,
 		{PFName,_NLParameters}=ToN#neuron.pf,
 		case {lists:keymember(FromId,1,ToSI_IdPs),lists:keymember(FromId,1,ToMI_IdPs)} of
@@ -591,15 +595,7 @@ link_FromNeuronToNeuron(Generation,From_NeuronId,To_NeuronId)->
 						U_ToSI_IdPs = case ToN#neuron.af of
 							{circuit,_To_InitSpec} ->%Because new neuron connections are accumulated on the left, we need to accumulate new weights on the left of the weight list for every neurode in input layer of circuit
 								C = ToN#neuron.input_idps,
-								%io:format("link_ToNeuron::~n AF:~p~n C#circuit.i:~p~n",[ToN#neuron.af,C#circuit.i]),
-								[NeurodeLayer|Substrate]=C#circuit.layers,
-								U_Neurodes=[Neurode#neurode{weights=circuit:add_weights(1,FromOVL,Neurode#neurode.af,Neurode#neurode.weights)}||Neurode<-NeurodeLayer#layer.neurodes],
-								U_NeurodeLayer = NeurodeLayer#layer{neurodes=U_Neurodes},
-								U_ToI = [{FromId,FromOVL}|C#circuit.i],
-								C#circuit{
-									i = U_ToI,
-									layers=[U_NeurodeLayer|Substrate]
-								};
+								circuit:link_ToCircuit(C,{FromId,FromOVL});
 							_ ->
 								[{FromId, genotype:create_NeuralWeightsP(PFName,FromOVL,[])}|ToSI_IdPs]
 						end,
@@ -610,7 +606,7 @@ link_FromNeuronToNeuron(Generation,From_NeuronId,To_NeuronId)->
 				end;
 %				end;
 			_ ->
-				exit("ERROR:add_NeuronI::[can not add I_Id]: ~p already connected to ~p~n",[FromId,ToN#neuron.id])
+				exit("******** ERROR:add_NeuronI::[can not add I_Id]: ~p already connected to ~p~n",[FromId,ToN#neuron.id])
 		end.
 %link_ToNeuron/4 updates the record of ToN, so that its updated to receive a connection from the element FromId. The link eminates from element with the id FromId, whose output vector length is FromOVL, and the connection is made to the neuron ToN, the record whose is updated in this function. Randomly chosen, either the ToN's input_idps_modulation or input_idps list is updated with the tuple {FromId,[{W_1,WPs}...{W_FromOVL,WPs}]}, then the neuron's generation is updated to Generation (the current, most recent generation), and the updated ToN's record is returned to the caller. On the other hand, if the FromId is already part of the ToN's input_idps or input_idps_modulation list (dependent on which was randomly chosen), which means that the standard or modulatory link already exists between the neuron ToN and element FromId, the the function exits with an error.
 
@@ -647,13 +643,20 @@ link_FromNeuronToActuator(Generation,From_NeuronId,To_ActuatorId)->
 %From Part
 	FromN = genotype:read({neuron,From_NeuronId}),
 	U_FromN = link_FromNeuron(FromN,To_ActuatorId,Generation),
+	FromOVL = case U_FromN#neuron.af of
+		{circuit,_} ->
+			(U_FromN#neuron.input_idps)#circuit.ovl;
+		_ ->
+			1
+	end,
 	genotype:write(U_FromN),
 %To Part
 	ToA = genotype:read({actuator,To_ActuatorId}),
 	Fanin_Ids = ToA#actuator.fanin_ids,
-	case length(Fanin_Ids) >= ToA#actuator.vl of
+	%case length(Fanin_Ids) >= ToA#actuator.vl of
+	case get_IVL(Fanin_Ids,0) >= ToA#actuator.vl of
 		true ->
-			exit("******** ERROR:link_FromNeuronToActuator:: Actuator already fully connected");
+			exit("******** Mutation Canceled:link_FromNeuronToActuator:: Actuator already fully connected");
 		false ->
 			U_Fanin_Ids = [From_NeuronId|Fanin_Ids],
 			genotype:write(ToA#actuator{
@@ -661,6 +664,25 @@ link_FromNeuronToActuator(Generation,From_NeuronId,To_ActuatorId)->
 				generation=Generation})
 	end.
 %The function Link_FromNeuronToActuator/4 establishes a link eminating from the neuron with an id From_NeuronId, to an actuator with the id To_ActuatorId. First the From_NeuronId's record is updated using the function link_FromNeuron/3, after which the updated neuron record is written to database. Then the function checks whether the actuator to which the neuron is establishing the link, still has space for that link (length(Fanin_Ids) is less than the actuator's vector length, vl). If there is no more room, then the function exits with error, if there is room, then the actuator's fanin_ids list is updated by appending to it the id of the neuron's id. The updated actuator is then written to the database.
+
+	get_IVL([Id|Ids],Acc)->
+		VL = case Id of
+			{_,neuron}->
+				N = genotype:read({neuron,Id}),
+				case N#neuron.af of
+					{circuit,_}->
+						(N#neuron.input_idps)#circuit.ovl;
+					_ ->
+						1
+				end;
+			{_,sensor}->
+				S = genotype:read({sensor,Id}),
+				S#sensor.vl
+		end,
+		get_IVL(Ids,Acc+VL);
+	get_IVL([],Acc)->
+		Acc.
+
 
 cutlink_FromElementToElement(Generation,From_ElementId,To_ElementId)->
 	case {From_ElementId,To_ElementId} of
@@ -715,18 +737,9 @@ cutlink_FromNeuronToNeuron(Generation,From_NeuronId,To_NeuronId)->
 		if 
 			Guard1->
 				U_ToSI_IdPs = case ToN#neuron.af of
-					{circuit,InitSpec} ->%Weights are removed based on the TargetIndex somewhere in the weight list.
+					{circuit,_InitSpec} ->%Weights are removed based on the TargetIndex somewhere in the weight list.
 						C=ToN#neuron.input_idps,
-						ToI = C#circuit.i,
-						{TargetIndex,TargetVL}=lists:keyfind(FromId,1,ToI),
-						[NeurodeLayer|Substrate] = C#circuit.layers,
-						U_Neurodes=[Neurode#neurode{weights=circuit:delete_weights(TargetIndex,TargetVL,Neurode#neurode.weights)}||Neurode<-NeurodeLayer#layer.neurodes],
-						U_NeurodeLayer = NeurodeLayer#layer{neurodes=U_Neurodes},
-						U_ToI = lists:keydelete(FromId,1,ToI),
-						C#circuit{
-							i=U_ToI,
-							layers=[U_NeurodeLayer|Substrate]
-						};
+						circuit:cutlink_ToCircuit(C,FromId);
 					_->
 						lists:keydelete(FromId,1,ToSI_IdPs)
 				end,
@@ -739,10 +752,10 @@ cutlink_FromNeuronToNeuron(Generation,From_NeuronId,To_NeuronId)->
 					input_idps_modulation = U_ToMI_IdPs,
 					generation = Generation};
 			true ->
-				exit("ERROR[can not remove I_Id]: ~p not a member of ~p~n",[FromId,ToN#neuron.id])
+				exit("******** ERROR:: cutlink_ToNeuron[can not remove I_Id]: ~p not a member of ~p~n",[FromId,ToN#neuron.id])
 		end.
 %cutlink_ToNeuron/3 cuts the connection on the ToNeuron (ToN) side. The function first checks if the FromId is a member of the ToN's input_idps list, if its not, then the function checks if it is a member of the input_idps_modulation list. If it is not a member of either, the function exits with error. If FromId is a member of one of these lists, then that tuple is removed from that list, and the updated ToN record is returned to the caller.
-
+	
 cutlink_FromSensorToNeuron(Generation,From_SensorId,To_NeuronId)->
 	%A = genotype:read({agent,Agent_Id}),
 	%Generation = A#agent.generation,
@@ -765,7 +778,7 @@ cutlink_FromSensorToNeuron(Generation,From_SensorId,To_NeuronId)->
 					fanout_ids = U_FromFanout_Ids,
 					generation=Generation};
 			false ->
-				exit("ERROR:: cutlink_FromSensor [can not remove ToId]: ~p not a member of ~p~n",[ToId,FromS#sensor.id])
+				exit("******** ERROR:: cutlink_FromSensor [can not remove ToId]: ~p not a member of ~p~n",[ToId,FromS#sensor.id])
 		end.
 %The cutlink_FromSensor/3 function first checks whether ToId is a member of the sensor's FromS fanout_ids list. If its not, then the function exits with an error. If ToId is a member of FromS's fanout_ids list, then it is removed from that list, and the updated sensor record of FromS is returned to the caller.
 
@@ -791,7 +804,7 @@ cutlink_FromNeuronToActuator(Generation,From_NeuronId,To_ActuatorId)->
 					fanin_ids = U_ToFanin_Ids,
 					generation=Generation};
 			false ->
-				exit("ERROR:: cutlink_ToActuator [can not remove FromId]: ~p not a member of ~p~n",[FromId,ToA])
+				exit("******** ERROR:: cutlink_ToActuator [can not remove FromId]: ~p not a member of ~p~n",[FromId,ToA])
 		end.
 %The cutlink_ToActuator/3 function cuts the connection on the ToActuator's side. The function first checks if the FromId is a member of the actuator ToA's fanin_ids list. If its not, the function exits with an error. If FromId is a member of the actuator's fanin_ids list, then the id is removed from the list, and the updated actuator record is returned to the caller.
 
@@ -807,7 +820,7 @@ add_outlink(Agent_Id)->
 	Outlink_NIdPool = filter_OutlinkIdPool(A#agent.constraint,N_Id,N_Ids),
 	case Outlink_NIdPool -- Output_Ids of
 		[] ->
-			exit("********ERROR:add_outlink:: Neuron already connected to all ids");
+			exit("******** Mutation Canceled:add_outlink:: Neuron already connected to all ids");
 		Available_Ids ->
 			To_Id = lists:nth(random:uniform(length(Available_Ids)),Available_Ids),
 			link_FromElementToElement(A#agent.generation,N_Id,To_Id),
@@ -854,7 +867,7 @@ add_inlink(Agent_Id)->
 	I_Ids = lists:append(SI_Ids,MI_Ids),
 	case lists:append(S_Ids,Inlink_NIdPool) -- I_Ids of
 		[] ->
-			exit("********ERROR:add_INLink:: Neuron already connected from all ids");
+			exit("******** Mutation Canceled:add_INLink:: Neuron already connected from all ids");
 		Available_Ids ->
 			From_Id = lists:nth(random:uniform(length(Available_Ids)),Available_Ids),
 			link_FromElementToElement(A#agent.generation,From_Id,N_Id),
@@ -902,7 +915,7 @@ add_neuron(Agent_Id)->%Adds neuron and connects it to other neurons, not sensors
 	ToElementId_Pool = Outlink_NIdPool,
 	case (FromElementId_Pool == []) or (ToElementId_Pool == []) of
 		true ->
-			exit("********ERROR::add_neuron(Agent_Id)::Can't add new neuron here, Inlink_NIdPool or Outlink_NIdPool is empty.");
+			exit("******** Mutation Canceled::add_neuron(Agent_Id)::Can't add new neuron here, Inlink_NIdPool or Outlink_NIdPool is empty.");
 		false ->
 			From_ElementId = lists:nth(random:uniform(length(FromElementId_Pool)),FromElementId_Pool),
 			To_ElementId = lists:nth(random:uniform(length(ToElementId_Pool)),ToElementId_Pool),
@@ -920,16 +933,16 @@ outsplice(Agent_Id)->
 	Pattern = A#agent.pattern,
 	Cx_Id = A#agent.cx_id,
 	Cx = genotype:read({cortex,Cx_Id}),
-	N_Ids = Cx#cortex.neuron_ids,
+	N_Ids = [{{LI,UId},neuron} || {{LI,UId},neuron} <- Cx#cortex.neuron_ids, LI =/= 0.99],%gets rid of the circuits used as preprocessors for actuator, if present.
 	N_Id = lists:nth(random:uniform(length(N_Ids)),N_Ids),
 	N = genotype:read({neuron,N_Id}),
 	{{LayerIndex,_UId},neuron} = N_Id,
 %Choose a random neuron in the output_ids for splicing, only forward facing.
 	OId_Pool = [{{OL,O_UId},OT} || {{OL,O_UId},OT} <- N#neuron.output_ids, OL > LayerIndex],
-	io:format("Outsplice:N_Id:~p~n OIds:~p~n OIdPool:~p~n",[N_Id,N#neuron.output_ids,OId_Pool]),
+	%io:format("Outsplice:N_Id:~p~n OIds:~p~n OIdPool:~p~n",[N_Id,N#neuron.output_ids,OId_Pool]),
 	case OId_Pool of
 		[] ->
-			exit("********ERROR:neurolink_OutputSplice:: NeuroLink_OutputSplice O_IdPool == []");
+			exit("******** Mutation Canceled:OutputSplice:: OutputSplice O_IdPool == []");
 		_->		
 			O_Id = lists:nth(random:uniform(length(OId_Pool)),OId_Pool),
 			{{OutputLayerIndex,_Output_UId},_OutputType} = O_Id,
@@ -963,6 +976,60 @@ outsplice(Agent_Id)->
 			genotype:write(A#agent{pattern=U_Pattern,evo_hist=U_EvoHist})
 	end.
 %The function outsplice/1 chooses a random neuron id from the cortex's neuron_ids list, disconnects it from a randomly chosen id in its output_ids list, and then reconnects it to the same element through a newly created neuron. The function first chooses a random neuron N with the neuron id N_Id from the cortex's neuron_ids list. Then the neuron N's output_ids list is extracted, and a new id list O_IdPool is created from the ids in the output_ids list that are located in the layer after the N_Id's layer (the ids of elements to whom the N_Id forms a feed forward connection). From that sublist of N's output_ids list, a random O_Id is chosen, and if the sublist is empty, then the function exits with an error. Then N_Id is disconnected from the O_Id. The function then creates or extracts a new layer index, NewLI, located between N_Id and O_Id. If there exists a layer between N_Id and O_Id, NewLI is simply that layer, if on the other hand O_Id's layer comes imedietly after N_Id's then a new layer is created between O_Id and N_Id, whose layer index is in the middle of the two elements. A new unconnected neuron is then created in that layer, with a neuron id NewN_Id, and connected to the O_Id, and from the N_Id, thus establishing a path from N_Id to O_Id through the NewN_Id. The cortex's neuron_ids is updated with the NewN_Id, and the agent's evo_hist list is updated with the new mutation operator tuple {outsplice,N_Id,Newn_Id,O_Id}. Finally, the updated cortex and agent are written to database.
+
+insplice(Agent_Id)->
+	A = genotype:read({agent,Agent_Id}),
+	Generation = A#agent.generation,
+	Pattern = A#agent.pattern,
+	Cx_Id = A#agent.cx_id,
+	Cx = genotype:read({cortex,Cx_Id}),
+	N_Ids = Cx#cortex.neuron_ids,
+	N_Id = lists:nth(random:uniform(length(N_Ids)),N_Ids),
+	N = genotype:read({neuron,N_Id}),
+	{{LayerIndex,_UId},neuron} = N_Id,
+%Choose a random neuron in the output_ids for splicing, only forward facing.
+	IId_Pool = case N#neuron.af of
+		{circuit,_} ->
+			[{{IL,I_UId},IT} || {{{IL,I_UId},IT},_IVL} <- (N#neuron.input_idps)#circuit.i, IL < LayerIndex];
+		_ ->
+			[{{IL,I_UId},IT} || {{{IL,I_UId},IT},_IVL} <- N#neuron.input_idps, IL < LayerIndex]
+	end,
+	%io:format("Insplice:N_Id:~p IIds:~p IIdPool:~p~n",[N_Id,N#neuron.input_idps,IId_Pool]),
+	case IId_Pool of
+		[] ->
+			exit("******** Mutation Canceled:InSplice:: InSplice I_IdPool == []");
+		_->		
+			I_Id = lists:nth(random:uniform(length(IId_Pool)),IId_Pool),
+			{{InputLayerIndex,_Input_UId},_InputType} = I_Id,
+%Create a new Layer, or select an existing one between N_Id and the I_Id, and create the new unlinked neuron.
+			NewLI = case InputLayerIndex =< LayerIndex of
+				true ->
+					get_NewLI(LayerIndex,InputLayerIndex,next,Pattern);
+				false ->
+					get_NewLI(LayerIndex,InputLayerIndex,prev,Pattern)
+			end,
+			NewN_Id={{NewLI,genotype:generate_UniqueId()},neuron},
+			SpecCon = A#agent.constraint,
+			genotype:construct_Neuron(Cx_Id,Generation,SpecCon,NewN_Id,[],[]),
+%Update pattern.
+			U_Pattern=case lists:keymember(NewLI,1,Pattern) of
+				true->
+					{NewLI,InLayerIds}=lists:keyfind(NewLI, 1, Pattern),
+					lists:keyreplace(NewLI, 1, Pattern, {NewLI,[NewN_Id|InLayerIds]});
+				false ->
+					lists:sort([{NewLI,[NewN_Id]}|Pattern])
+			end,
+%Disconnect the N_Id from the O_Id, and reconnect through NewN_Id
+			cutlink_FromElementToElement(A#agent.generation,I_Id,N_Id),
+			link_FromElementToElement(A#agent.generation,I_Id,NewN_Id),
+			link_FromElementToElement(A#agent.generation,NewN_Id,N_Id),
+%Updated agent
+			EvoHist = A#agent.evo_hist,
+			U_EvoHist = [{insplice,I_Id,NewN_Id,N_Id}|EvoHist],
+			U_Cx = Cx#cortex{neuron_ids = [NewN_Id|Cx#cortex.neuron_ids]},
+			genotype:write(U_Cx),
+			genotype:write(A#agent{pattern=U_Pattern,evo_hist=U_EvoHist})
+	end.
 
 get_NewLI(LI,LI,_Direction,_Pattern)->
 	LI;
@@ -1027,7 +1094,7 @@ add_sensorlink(Agent_Id)->
 	S = genotype:read({sensor,S_Id}),
 	case N_Ids -- S#sensor.fanout_ids of
 		[] ->
-			exit("********ERROR:add_sensorlink:: Sensor already connected to all N_Ids");
+			exit("******** Mutation Canceled:add_sensorlink:: Sensor already connected to all N_Ids");
 		Available_Ids ->
 			N_Id = lists:nth(random:uniform(length(Available_Ids)),Available_Ids),
 			link_FromElementToElement(A#agent.generation,S_Id,N_Id),
@@ -1054,7 +1121,7 @@ add_actuatorlink(Agent_Id)->%TODO: There should be a preference towards non full
 	A = genotype:read({actuator,A_Id}),
 	case N_Ids -- A#actuator.fanin_ids of
 		[] ->
-			exit("********ERROR:add_actuatorlink:: Actuator already connected from all N_Ids");
+			exit("******** Mutation Canceled:add_actuatorlink:: Actuator already connected from all N_Ids");
 		Available_Ids ->
 			N_Id = lists:nth(random:uniform(length(Available_Ids)),Available_Ids),
 			link_FromElementToElement(Agent#agent.generation,N_Id,A_Id),
@@ -1073,7 +1140,7 @@ add_sensor(Agent_Id)->%TODO: There should be a preference towards adding sensors
 	Morphology = SpeCon#constraint.morphology,
 	case morphology:get_Sensors(Morphology)--[(genotype:read({sensor,S_Id}))#sensor{id=undefined,cx_id=undefined,fanout_ids=[],generation=undefined} || S_Id<-S_Ids] of
 		[] ->
-			exit("********ERROR:add_sensor(Agent_Id):: NN system is already using all available sensors");
+			exit("******** Mutation Canceled:add_sensor(Agent_Id):: NN system is already using all available sensors");
 		Available_Sensors ->
 			NewS_Id = {{-1,genotype:generate_UniqueId()},sensor},
 			NewSensor=(lists:nth(random:uniform(length(Available_Sensors)),Available_Sensors))#sensor{id=NewS_Id,cx_id=Cx_Id},
@@ -1103,9 +1170,10 @@ add_actuator(Agent_Id)->%TODO: There should be a preference towards adding actua
 	A_Ids = Cx#cortex.actuator_ids,%TODO: Should we fill in all the fanin_ids locations, or just 1? and let evolution fill the rest?
 	SpeCon = Agent#agent.constraint,
 	Morphology = SpeCon#constraint.morphology,
+	Generation = Agent#agent.generation,
 	case morphology:get_Actuators(Morphology)--[(genotype:read({actuator,A_Id}))#actuator{cx_id=undefined,id=undefined,fanin_ids=[],generation=undefined} || A_Id<-A_Ids] of
 		[] ->
-			exit("********ERROR:add_actuator(Agent_Id):: NN system is already using all available actuators");
+			exit("******** Mutation Canceled:add_actuator(Agent_Id):: NN system is already using all available actuators");
 		Available_Actuators ->
 			%io:format("New:~p~nUsd:~p~n Remaining:~p~n",[morphology:get_Actuators(Morphology),[(genotype:read({actuator,A_Id}))#actuator{cx_id=undefined,id=undefined,fanin_ids=[],generation=undefined} || A_Id<-A_Ids],Available_Actuators]),
 			NewA_Id = {{1,genotype:generate_UniqueId()},actuator},
@@ -1114,26 +1182,57 @@ add_actuator(Agent_Id)->%TODO: There should be a preference towards adding actua
 			case Agent#agent.encoding_type of
 				neural ->
 					genotype:write(NewActuator),
-					N_Ids = Cx#cortex.neuron_ids,
-					N_Id = lists:nth(random:uniform(length(N_Ids)),N_Ids),
-					link_FromElementToElement(Agent#agent.generation,N_Id,NewA_Id),
-					U_EvoHist = [{add_actuator,N_Id,NewA_Id}|EvoHist];
+					case (length([1|| {circuit,_} <- SpeCon#constraint.neural_afs]) == 0) of
+						%{circuit,InitSpec} ->
+						false ->
+							N2_Id = {{0.99,genotype:generate_UniqueId()},neuron},
+							InitSpec = #layer{neurode_type=tanh,tot_neurodes=NewActuator#actuator.vl,dynamics=dynamic,type=standard},
+							AF = {circuit,InitSpec},% = generate_NeuronAF([{circuit,IS}||{circuit,IS}<-SpecCon#constraint.neural_afs]),
+							PF = {PFName,NLParameters} = genotype:generate_NeuronPF(SpeCon#constraint.neural_pfns),
+							Input_IdPs = circuit:create_Circuit([],InitSpec),
+							Neuron2=#neuron{
+								id=N2_Id,
+								cx_id = Cx_Id,
+								generation=Generation,
+								af=AF,
+								pf = PF,
+								aggr_f=genotype:generate_NeuronAggrF(SpeCon#constraint.neural_aggr_fs),
+								input_idps=Input_IdPs,
+								output_ids=[],
+								ro_ids = []
+							},
+							genotype:write(Neuron2),
+							N1_Id = {{0,genotype:generate_UniqueId()},neuron},
+							genotype:construct_Neuron(Cx_Id,Generation,SpeCon,N1_Id,[],[]),
+							N_Ids = Cx#cortex.neuron_ids,
+							N_Id = lists:nth(random:uniform(length(N_Ids)),N_Ids),
+							genotype:link_Neuron(Generation,[N_Id],N1_Id,[N2_Id]),
+							genome_mutator:link_FromElementToElement(Generation,N2_Id,NewActuator#actuator.id),
+							U_EvoHist = [{add_actuator,[N1_Id,N2_Id],NewA_Id}|EvoHist],
+							U_Cx = Cx#cortex{actuator_ids=[NewA_Id|A_Ids],neuron_ids=lists:append([N1_Id,N2_Id],Cx#cortex.neuron_ids)};
+						true ->
+							N_Ids = [{{0,genotype:generate_UniqueId()},neuron}||_<-lists:seq(1,NewActuator#actuator.vl)],
+							[genotype:construct_Neuron(Cx_Id,Generation,SpeCon,N_Id,[],[])||N_Id<-N_Ids],
+							U_Cx = Cx#cortex{actuator_ids=[NewA_Id|A_Ids],neuron_ids=lists:append(N_Ids,Cx#cortex.neuron_ids)},
+							U_EvoHist = [{add_actuator,N_Ids,NewA_Id}|EvoHist],
+							[genotype:link_Neuron(Generation,[lists:nth(random:uniform(length(N_Ids)),N_Ids)],N_Id,[NewActuator#actuator.id])||N_Id<-N_Ids]
+					end;
 				substrate ->
 					Substrate_Id = Agent#agent.substrate_id,
 					genotype:write(NewActuator#actuator{fanin_ids=[Substrate_Id]}),
+					U_Cx = Cx#cortex{actuator_ids=[NewA_Id|A_Ids]},
 					U_EvoHist = [{add_actuator,Substrate_Id,NewA_Id}|EvoHist]
 			end,
-			U_Cx = Cx#cortex{actuator_ids=[NewA_Id|A_Ids]},
 			genotype:write(U_Cx),
 			genotype:write(Agent#agent{evo_hist=U_EvoHist})
 	end.
 %The add_actuator/1 function adds and connects a new actuator to the neural network, an actuator type to which the NN is noet yet connected to. After the morphology name from the constraints record, a complete actuator list available to the NN from which to draw its actuators from during evolution is created. From that list the actuator list that the NN is already connected to is subtracted, after the ids and cx_ids of those actuators is set to undefined. The resulting list is the list of actuators to which the NN is not yet connected to. A random actuator is chosen from that list, and a random neuron id N_Id from cortex's neuron_ids is chosen and connected to the new actuator. The cortex's actuator_ids list is then updated with the id of the newly created actuator, the agent's evo_hist is updated with the new tuple, and then both the updated cortex and the agent are written to database.
-
+	
 add_cpp(Agent_Id)->%TODO: There should be a preference towards adding substrate_cpps not yet used.
 	Agent = genotype:read({agent,Agent_Id}),
 	case Agent#agent.encoding_type of
 		neural->
-			exit("********ERROR:add_cpp(Agent_Id):: NN is neural encoded, can not apply mutation operator.");
+			exit("******** Mutation Canceled:add_cpp(Agent_Id):: NN is neural encoded, can not apply mutation operator.");
 		substrate->
 			Cx_Id = Agent#agent.cx_id,
 			Cx = genotype:read({cortex,Cx_Id}),
@@ -1144,7 +1243,7 @@ add_cpp(Agent_Id)->%TODO: There should be a preference towards adding substrate_
 			CPP_Ids = Substrate#substrate.cpp_ids,
 			case morphology:get_SubstrateCPPs(Dimensions,Plasticity)--[(genotype:read({sensor,CPP_Id}))#sensor{id=undefined,cx_id=undefined,fanout_ids=[],generation=undefined} || CPP_Id<-CPP_Ids] of
 				[] ->
-					exit("********ERROR:add_cpp(Agent_Id):: NN system is already using all available substrate_cpps");
+					exit("******** Mutation Canceled:add_cpp(Agent_Id):: NN system is already using all available substrate_cpps");
 				Available_CPPs ->
 					NewCPP_Id = {{-1,genotype:generate_UniqueId()},sensor},
 					NewCPP=(lists:nth(random:uniform(length(Available_CPPs)),Available_CPPs))#sensor{id=NewCPP_Id,cx_id=Cx_Id},
@@ -1162,9 +1261,11 @@ add_cpp(Agent_Id)->%TODO: There should be a preference towards adding substrate_
 	
 add_cep(Agent_Id)->
 	Agent = genotype:read({agent,Agent_Id}),
+	SpeCon = Agent#agent.constraint,
+	Generation = Agent#agent.generation,
 	case Agent#agent.encoding_type of
 		neural->
-			exit("********ERROR:add_cep(Agent_Id):: NN is neural encoded, can not apply mutation operator.");
+			exit("******** Mutation Canceled:add_cep(Agent_Id):: NN is neural encoded, can not apply mutation operator.");
 		substrate->
 			Cx_Id = Agent#agent.cx_id,
 			Cx = genotype:read({cortex,Cx_Id}),
@@ -1175,16 +1276,51 @@ add_cep(Agent_Id)->
 			CEP_Ids = Substrate#substrate.cep_ids,
 			case morphology:get_SubstrateCEPs(Dimensions,Plasticity)--[(genotype:read({actuator,CEP_Id}))#actuator{id=undefined,cx_id=undefined,fanin_ids=[],generation=undefined} || CEP_Id<-CEP_Ids] of
 				[] ->
-					exit("********ERROR:add_cep(Agent_Id):: NN system is already using all available substrate_cpps");
+					exit("******** Mutation Canceled:add_cep(Agent_Id):: NN system is already using all available substrate_cpps");
 				Available_CEPs ->
-					NewCEP_Id = {{-1,genotype:generate_UniqueId()},actuator},
+					NewCEP_Id = {{1,genotype:generate_UniqueId()},actuator},
 					NewCEP=(lists:nth(random:uniform(length(Available_CEPs)),Available_CEPs))#actuator{id=NewCEP_Id,cx_id=Cx_Id},
 					EvoHist = Agent#agent.evo_hist,
 					genotype:write(NewCEP),
-					N_Ids = Cx#cortex.neuron_ids,
-					N_Id = lists:nth(random:uniform(length(N_Ids)),N_Ids),
-					link_FromElementToElement(Agent#agent.generation,N_Id,NewCEP_Id),
-					U_EvoHist = [{add_cep,NewCEP_Id,N_Id}|EvoHist],
+					case (length([1|| {circuit,_} <- SpeCon#constraint.neural_afs]) == 0) of
+						%{circuit,InitSpec} ->
+						false ->
+							N2_Id = {{0.99,genotype:generate_UniqueId()},neuron},
+							InitSpec = #layer{neurode_type=tanh,tot_neurodes=NewCEP#actuator.vl,dynamics=dynamic,type=standard},
+							AF = {circuit,InitSpec},% = generate_NeuronAF([{circuit,IS}||{circuit,IS}<-SpecCon#constraint.neural_afs]),
+							PF = {PFName,NLParameters} = genotype:generate_NeuronPF(SpeCon#constraint.neural_pfns),
+							Input_IdPs = circuit:create_Circuit([],InitSpec),
+							Neuron2=#neuron{
+								id=N2_Id,
+								cx_id = Cx_Id,
+								generation=Generation,
+								af=AF,
+								pf = PF,
+								aggr_f=genotype:generate_NeuronAggrF(SpeCon#constraint.neural_aggr_fs),
+								input_idps=Input_IdPs,
+								output_ids=[],
+								ro_ids = []
+							},
+							genotype:write(Neuron2),
+							N1_Id = {{0,genotype:generate_UniqueId()},neuron},
+							genotype:construct_Neuron(Cx_Id,Generation,SpeCon,N1_Id,[],[]),
+							N_Ids = Cx#cortex.neuron_ids,
+							N_Id = lists:nth(random:uniform(length(N_Ids)),N_Ids),
+							genotype:link_Neuron(Generation,[N_Id],N1_Id,[N2_Id]),
+							genome_mutator:link_FromElementToElement(Generation,N2_Id,NewCEP#actuator.id),
+							EvoHist = Agent#agent.evo_hist,
+							U_Cx = Cx#cortex{neuron_ids=lists:append([N1_Id,N2_Id],Cx#cortex.neuron_ids)},
+							U_EvoHist = [{add_cep,[N1_Id,N2_Id],NewCEP_Id}|EvoHist],
+							genotype:write(U_Cx);
+						true ->
+							N_Ids = [{{0,genotype:generate_UniqueId()},neuron}||_<-lists:seq(1,NewCEP#actuator.vl)],
+							[genotype:construct_Neuron(Cx_Id,Generation,SpeCon,N_Id,[],[])||N_Id<-N_Ids],
+							EvoHist = Agent#agent.evo_hist,
+							U_EvoHist = [{add_cep,N_Ids,NewCEP_Id}|EvoHist],
+							[genotype:link_Neuron(Generation,[lists:nth(random:uniform(length(N_Ids)),N_Ids)],N_Id,[NewCEP#actuator.id])||N_Id<-N_Ids],
+							U_Cx = Cx#cortex{neuron_ids=lists:append(N_Ids,Cx#cortex.neuron_ids)},
+							genotype:write(U_Cx)
+					end,
 					U_Substrate = Substrate#substrate{cep_ids=[NewCEP_Id|CEP_Ids]},
 					genotype:write(U_Substrate),
 					genotype:write(Agent#agent{evo_hist=U_EvoHist})

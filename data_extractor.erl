@@ -219,7 +219,8 @@ mnist(TableName,[],Index)->
 	mnist_ConvertBin()->
 		{ok,Mnist} = ets:file2tab(mnist),
 		mnist_ConvertBin(Mnist,1,70001),
-		ets:tab2file(Mnist,mnist_bin).
+		ets:rename(Mnist,mnist_bin),
+		ets:tab2file(mnist_bin,mnist_bin).
 		
 		mnist_ConvertBin(_TN,EndIndex,EndIndex)->
 			ok;
@@ -245,18 +246,106 @@ mnist(TableName,[],Index)->
 			ets:insert(Mnist,{0,Info}),
 			ets:tab2file(Mnist,mnist).
 		
-%[$/,$/]++[$,||_<-lists:seq(1,3)]++[10].	
+%[$/,$/]++[$,||_<-lists:seq(1,3)]++[13,10].
+%data_extractor:start("data.txt",[$/,$/]++[$,||_<-lists:seq(1,3)]++[10],hedge_fund,hedge_fund).	
 hedge_fund(TableName,[DataNames|Lines],Index)->
 	ets:insert(TableName,{0,DataNames}),
 	hedge_fund1(TableName,Lines,1).
-hedge_fund1(TableName,[Line|Lines],Index)->
-	[Date|Vector] = Line,
-	[_|RV]=lists:reverse(Vector),
-	io:format("Date:~p~n Vector:~p~n",[Date,lists:reverse(RV)]),
-	ets:insert(TableName,{Index,Date,lists:reverse(RV)}),
-	hedge_fund1(TableName,Lines,Index+1);
-hedge_fund1(TableName,[],Index)->
-	io:format("Stored to ETS table:~p Index reached:~p~n",[TableName,Index-1]).
+	
+	hedge_fund1(TableName,[Line|Lines],Index)->
+		[Date|Vector] = Line,
+		[_|RV]=lists:reverse(Vector),
+		io:format("Date:~p~n Vector:~p~n",[Date,lists:reverse(RV)]),
+		ets:insert(TableName,{Index,lists:reverse(RV),Date}),
+		hedge_fund1(TableName,Lines,Index+1);
+	hedge_fund1(TableName,[],Index)->
+		[{_Key,Vec,_Date}]=ets:lookup(TableName,Index-1),
+		[{0,DataNaes}]=ets:lookup(TableName,0),
+		Info = #info{
+			name=TableName,
+			ivl=length(Vec),
+			ovl=1,
+			trn_end=Index-1,
+			val_end=Index-1,
+			tst_end=Index-1
+		},
+		ets:insert(TableName,{0,Info}),
+		io:format("Stored to ETS table:~p Index reached:~p~n",[TableName,Index-1]).
+
+%[9|| _<-lists:seq(1,8)]++[10]
+%data_extractor:start("Gm12878.chr22.ChromHMM.bed",[9|| _<-lists:seq(1,8)]++[10],chrom_HMM,chrom_HMM).
+chrom_HMM(TableName,Lines,Index)->
+	Unique_Tags = find_unique_tags(Lines,[]),	
+	%Tot_Tags = length(Unique_Tags),
+	chrom_HMM(TableName,Lines,Index,Unique_Tags).
+	
+	find_unique_tags([Line|Lines],Acc)->
+		[_,_,_,Tag|_] = Line,
+		case lists:member(Tag,Acc) of
+			true ->
+				find_unique_tags(Lines,Acc);
+			false ->
+				find_unique_tags(Lines,[Tag|Acc])
+		end;
+	find_unique_tags([],Acc)->
+		Acc.
+	
+	chrom_HMM(TableName,[Line|Lines],Index,Unique_Tags)->
+		[ChrName,StartBPI,EndBPI,Tag|_] = Line,
+		%io:format("StartBPI:~p EndBPI:~p Tag:~p~n",[StartBPI,EndBPI,Tag]),
+		TotSteps = (EndBPI - StartBPI)/200,
+		Vector = tag_it(Tag,Unique_Tags,[]),
+		Entries = [{Index+I,Vector,StartBPI+I*200}||I<-lists:seq(0,round(TotSteps))],
+		%io:format("Line:~p TotSteps:~p Vector:~p~n",[Line,TotSteps,Vector]),
+		%[io:format("Entry:~p~n",[Entry])||Entry<-Entries],
+		[ets:insert(TableName,Entry)||Entry<-Entries],
+		chrom_HMM(TableName,Lines,round(Index+TotSteps+1),Unique_Tags);
+	chrom_HMM(TableName,[],Index,Unique_Tags)->
+		IVL = length(Unique_Tags),
+		Info = #info{
+			name=TableName,
+			ivl=IVL,
+			ovl=undefined,
+			trn_end=Index-1
+		},
+		ets:insert(TableName,{0,Info}),
+		io:format("Stored to ETS table:~p Index reached:~p~n",[TableName,Index-1]),
+		io:format("Tag_Order:~p~n",[[{Tag,Index}|| {Tag,Index}<- lists:zip(Unique_Tags,lists:seq(1,length(Unique_Tags)))]]).
+		%fit_to_chr22(TableName).
+	
+		tag_it(Target_Tag,[Target_Tag|Tags],Acc)->
+			tag_it(Target_Tag,Tags,[1|Acc]);
+		tag_it(Target_Tag,[Tag|Tags],Acc)->
+			tag_it(Target_Tag,Tags,[0|Acc]);
+		tag_it(_Target_Tag,[],Acc)->
+			lists:reverse(Acc).
+
+		chrom_HMMTags()->
+			[{"ReprD",1},
+			   {"EnhF",2},
+			   {"PromP",3},
+			   {"H4K20",4},
+			   {"Enh",5},
+			   {"Art",6},
+			   {"Gen5'",7},
+			   {"Gen3'",8},
+			   {"ElonW",9},
+			   {"Tss",10},
+			   {"EnhW",11},
+			   {"EnhWF",12},
+			   {"CtcfO",13},
+			   {"Repr",14},
+			   {"ReprW",15},
+			   {"Ctcf",16},
+			   {"DnaseD",17},
+			   {"Elon",18},
+			   {"Pol2",19},
+			   {"DnaseU",20},
+			   {"Low",21},
+			   {"FaireW",22},
+			   {"TssF",23},
+			   {"PromF",24},
+			   {"Quies",25}].
 	
 %[9|| _<-lists:seq(1,14)]++[10]
 deep_gene(TableName,[Line|Lines],Index)->
@@ -266,7 +355,7 @@ deep_gene(TableName,[Line|Lines],Index)->
 deep_gene(TableName,[],Index)->
 	IVL = 14,
 	Info = #info{
-		name=mnist,
+		name=TableName,
 		ivl=IVL,
 		ovl=undefined,
 		trn_end=Index-1
@@ -306,16 +395,18 @@ deep_gene(TableName,[],Index)->
 		ets:tab2file(TN,chr22).
 		
 	dg_clean()->
-		{ok,Chr22} = ets:file2tab(chr22),
-		{Acc,Acc1}=dg_clean(Chr22,1,166036,[],1),
-		[ets:insert(Chr22,Tuple) || Tuple <- Acc],
+		{ok,TN} = ets:file2tab(chr22),
+		{Acc,Acc1}=dg_clean(TN,1,166036,[],1),
+		[ets:insert(TN,Tuple) || Tuple <- Acc],
 		io:format("TotRemains:~p~n",[Acc1-1]),
-		[{0,Info}] = ets:lookup(Chr22,0),
-		U_Info = Info#info{trn_end = Acc1-1},
-		Result1=ets:insert(Chr22,{0,U_Info}),
-		Result2=ets:tab2file(Chr22,chr22_clean),
+		New_TN = chr22_clean,
+		[{0,Info}] = ets:lookup(TN,0),
+		U_Info = Info#info{trn_end = Acc1-1,name=New_TN},
+		ets:rename(TN,New_TN),
+		Result1=ets:insert(New_TN,{0,U_Info}),
+		Result2=ets:tab2file(New_TN,New_TN),
 		io:format("R1:~p R2:~p~n",[Result1,Result2]),
-		ets:delete(Chr22).
+		ets:delete(New_TN).
 		
 		dg_clean(_TN,EndIndex,EndIndex,Acc,Acc1)->
 			{Acc,Acc1};
@@ -340,16 +431,19 @@ deep_gene(TableName,[],Index)->
 			Tst_End ->
 				Tst_End
 		end,
-		dg_scale(TN,1,Index_End+1,Table_Statistics),
-		ets:tab2file(TN,chr22_clean_scaled).
+		dg_scale1(TN,1,Index_End+1,Table_Statistics),
+		New_TN = chr22_clean_scaled1,
+		ets:rename(TN,New_TN),
+		ets:insert(New_TN,{0,Info#info{name=New_TN}}),
+		ets:tab2file(New_TN,New_TN).
 		
-		dg_scale(_TN,EndIndex,EndIndex,_TS)->
+		dg_scale1(_TN,EndIndex,EndIndex,_TS)->
 			ok;
-		dg_scale(TN,Index,EndIndex,TS)->
+		dg_scale1(TN,Index,EndIndex,TS)->
 			[{Index,Sequence,Class}] = ets:lookup(TN,Index),
 			U_Sequence = scale_vec(Sequence,TS,[]),
 			ets:insert(TN,{Index,U_Sequence,Class}),
-			dg_scale(TN,Index+1,EndIndex,TS).
+			dg_scale1(TN,Index+1,EndIndex,TS).
 			
 			scale_vec([Val|Sequence],[{Min,Avg,Max}|TS],Acc)->
 				scale_vec(Sequence,TS,[Val/Max|Acc]);
@@ -366,7 +460,10 @@ deep_gene(TableName,[],Index)->
 				Tst_End
 		end,
 		dg_scale2(TN,1,Index_End+1),
-		ets:tab2file(TN,chr22_clean_scaled2).
+		New_TN = chr22_clean_scaled2,
+		ets:rename(TN,New_TN),
+		ets:insert(New_TN,{0,Info#info{name=New_TN}}),
+		ets:tab2file(New_TN,New_TN).
 		
 		dg_scale2(_TN,EndIndex,EndIndex)->
 			ok;
@@ -407,6 +504,47 @@ deep_gene(TableName,[],Index)->
 			update_min_avg_max([],[],Acc)->
 				lists:reverse(Acc).
 	
+	dg_bin()->
+		{ok,TN} = ets:file2tab(chr22_clean),
+		[{0,Info}] = ets:lookup(TN,0),
+		Index_End = case Info#info.tst_end of
+			undefined ->
+				Info#info.trn_end;
+			Tst_End ->
+				Tst_End
+		end,
+		dg_bin(TN,1,Index_End+1),
+		ets:rename(TN,chr22_bin),
+		ets:tab2file(chr22_bin,chr22_bin).
+	
+		dg_bin(_TN,EndIndex,EndIndex)->
+			ok;
+		dg_bin(TN,Index,EndIndex)->
+			[{Index,Sequence,Class}] = ets:lookup(TN,Index),
+			U_Sequence = [case Val == 0 of true -> io:format("Zero~n"), 0; false -> 1 end||Val<-Sequence],
+			ets:insert(TN,{Index,U_Sequence,Class}),
+			dg_bin(TN,Index+1,EndIndex).
+			
+		count_zeroes(FN)->
+			{ok,TN} = ets:file2tab(FN),
+			[{0,Info}] = ets:lookup(TN,0),
+			Index_End = case Info#info.tst_end of
+				undefined ->
+					Info#info.trn_end;
+				Tst_End ->
+					Tst_End
+			end,
+			count_zeroes(TN,1,Index_End+1,0,0),
+			ets:delete(TN).
+			
+			count_zeroes(_TN,EndIndex,EndIndex,ZAcc,NZAcc)->
+				io:format("Zeroes:~p NotZeroes:~p Ratio:~p~n",[ZAcc,NZAcc,ZAcc/NZAcc]);
+			count_zeroes(TN,Index,EndIndex,ZAcc,NZAcc)->
+				[{Index,Sequence,Class}] = ets:lookup(TN,Index),
+				NZ = lists:sum(Sequence),
+				Z = length(Sequence) - NZ,
+				count_zeroes(TN,Index+1,EndIndex,ZAcc+Z,NZAcc+NZ).
+	
 change_id()->
 	C=genotype:dirty_read({circuit,undefined}),
 	genotype:write(C#circuit{id=mnist_3}).
@@ -432,7 +570,20 @@ wine(TableName,[],Index)->
 	},
 	ets:insert(TableName,{0,Info}),
 	io:format("Stored to ETS table:~p Index reached:~p~n",[TableName,Index-1]).
-	
+
+%[9|| _<- lists:seq(1,9)]++[10]
+chr_hmm(TableName,[Line|Lines],Index)->
+	%io:format("~p~n",[{Line,Lines}]),
+	[ChrNumber,From,To,Tag|Remainder] = Line,
+	ets:insert(TableName,{Index,From,To,Tag,Remainder}),
+	chr_hmm(TableName,Lines,Index+1);
+chr_hmm(TableName,[],Index)->
+	Info = #info{
+		name=chr22_hmm
+	},
+	ets:insert(TableName,{0,Info}),
+	io:format("Stored to ETS table:~p Index reached:~p~n",[TableName,Index-1]).
+
 create_CircuitTestFiles()->
 	%i10o20: IVL=10,OVL=20,
 	I10O20 = ets:new(i10o20,[set,private,named_table]),
@@ -484,7 +635,7 @@ create_CircuitTestFiles()->
 	ets:delete(i100o20),
 	%i100o50: IVL=100,OVL=50,
 	I100O50 = ets:new(i100o50,[set,private,named_table]),
-	Trni100o50=[{Index,[random:uniform(2)-1||_<-lists:seq(1,100)],[random:uniform(2)-1||_<-lists:seq(1,50)]} || Index <- lists:seq(1,500)],
+	Trni100o50=[{Index,[random:uniform()-0.5||_<-lists:seq(1,100)],[random:uniform()-0.5||_<-lists:seq(1,50)]} || Index <- lists:seq(1,500)],
 	Vali100o50=[{Index+500,I,O}||{Index,I,O}<-lists:sublist(Trni100o50,100)],
 	Tsti100o50=[{Index+500,I,O}||{Index,I,O}<-lists:sublist(Vali100o50,100)],
 	[ets:insert(i100o50,{Index,I,O}) || {Index,I,O}<-Trni100o50++Vali100o50++Tsti100o50],
@@ -500,7 +651,7 @@ create_CircuitTestFiles()->
 	ets:delete(i100o50),
 	%i100o200: IVL=100,OVL=200,
 	I100O200 = ets:new(i100o200,[set,private,named_table]),
-	Trni100o200=[{Index,[random:uniform(2)-1||_<-lists:seq(1,100)],[random:uniform(2)-1||_<-lists:seq(1,200)]} || Index <- lists:seq(1,500)],
+	Trni100o200=[{Index,[random:uniform()-0.5||_<-lists:seq(1,100)],[random:uniform()-0.5||_<-lists:seq(1,200)]} || Index <- lists:seq(1,500)],
 	Vali100o200=[{Index+500,I,O}||{Index,I,O}<-lists:sublist(Trni100o200,100)],
 	Tsti100o200=[{Index+500,I,O}||{Index,I,O}<-lists:sublist(Vali100o200,100)],
 	[ets:insert(i100o200,{Index,I,O}) || {Index,I,O}<-Trni100o200++Vali100o200++Tsti100o200],
@@ -516,7 +667,7 @@ create_CircuitTestFiles()->
 	ets:delete(i100o200),
 	%i200o100: IVL=200,OVL=100
 	I200O100not_test = ets:new(i200o100not_test,[set,private,named_table]),
-	Trni200o100not_test=[{Index,[random:uniform(2)-1||_<-lists:seq(1,200)],[random:uniform(2)-1||_<-lists:seq(1,100)]} || Index <- lists:seq(1,500)],
+	Trni200o100not_test=[{Index,[random:uniform()-0.5||_<-lists:seq(1,200)],[random:uniform()-0.5||_<-lists:seq(1,100)]} || Index <- lists:seq(1,500)],
 	[ets:insert(i200o100not_test,{Index,I,O}) || {Index,I,O}<-Trni200o100not_test],
 	ets:insert(i200o100not_test,{0,#info{
 		name=i200o100not_test,
@@ -528,7 +679,7 @@ create_CircuitTestFiles()->
 	ets:delete(i200o100not_test),
 	%i200o100short: IVL=200,OVL=100
 	I200O100short = ets:new(i200o100short,[set,private,named_table]),
-	Trni200o100short=[{Index,[random:uniform(2)-1||_<-lists:seq(1,200)],[random:uniform(2)-1||_<-lists:seq(1,100)]} || Index <- lists:seq(1,10)],
+	Trni200o100short=[{Index,[random:uniform()-0.5||_<-lists:seq(1,200)],[random:uniform(2)-1||_<-lists:seq(1,100)]} || Index <- lists:seq(1,10)],
 	[ets:insert(i200o100short,{Index,I,O}) || {Index,I,O}<-Trni200o100short],
 	ets:insert(i200o100short,{0,#info{
 		name=i200o100short,

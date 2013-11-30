@@ -21,7 +21,17 @@
 -module(cortex).
 -compile(export_all).
 -include("records.hrl").
--record(state,{id,exoself_pid,spids,npids,apids,cycle_acc=0,fitness_acc=0,endflag=0,status}).
+-record(state,{
+	id,
+	exoself_pid,
+	spids,
+	npids,
+	apids,
+	cycle_acc=0,
+	fitness_acc=0,
+	endflag=0,
+	status
+}).
 
 gen(ExoSelf_PId,Node)->
 	spawn(Node,?MODULE,prep,[ExoSelf_PId]).
@@ -72,7 +82,7 @@ loop(Id,ExoSelf_PId,SPIds,{MAPIds,MAPIds},NPIds,_CycleAcc,_FitnessAcc,_EFAcc,ina
 			[SPId ! {self(),sync} || SPId <- SPIds],
 			cortex:loop(Id,ExoSelf_PId,SPIds,{MAPIds,MAPIds},NPIds,1,0,0,active,OpMode);
 		{ExoSelf_PId,terminate}->
-			%io:format("Cortex:~p is terminating.~n",[Id]),
+			io:format("Cortex:~p is terminating.~n",[Id]),
 			ok
 	end.
 %The cortex's goal is to synchronize the the NN system such that when the actuators have received all their control signals, the sensors are once again triggered to gather new sensory information. Thus the cortex waits for the sync messages from the actuator PIds in its system, and once it has received all the sync messages, it triggers the sensors and then drops back to waiting for a new set of sync messages. The cortex stores 2 copies of the actuator PIds: the APIds, and the MemoryAPIds (MAPIds). Once all the actuators have sent it the sync messages, it can restore the APIds list from the MAPIds. Finally, there is also the Step variable which decrements every time a full cycle of Sense-Think-Act completes, once this reaches 0, the NN system begins its termination and backup process.

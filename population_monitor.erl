@@ -1061,7 +1061,7 @@ gather_STATS(Population_Id,EvaluationsAcc,OpMode)->
 							%{Champion_Id,ValFitness,FitnessProfile}->
 							{TestChampion_Id,test_complete,TestSpecie_Id,TestFitness,TestCycles,TestTime}->
 								%io:format("Got Validation results:~p~n",[{Champion_Id,validation_complete,Specie_Id,ValFitness,Cycles,Time}]),
-								{TestFitness,Champion_Id}
+								TestFitness
 						end;
 					TestFitness ->
 						TestFitness

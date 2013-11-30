@@ -35,7 +35,7 @@ prep(ExoSelf_PId) ->
 
 loop(Id,ExoSelf_PId,Cx_PId,Scape,AName,VL,Parameters,{[From_PId|Fanin_PIds],MFanin_PIds},Acc) ->
 	receive
-		{From_PId,forward,Input} ->
+		{From_PId,forward,Input} ->%io:format("Input~p~n",[{Input,Fanin_PIds}]),
 			loop(Id,ExoSelf_PId,Cx_PId,Scape,AName,VL,Parameters,{Fanin_PIds,MFanin_PIds},lists:append(Input,Acc));
 		{ExoSelf_PId,terminate} ->
 			%io:format("Actuator:~p is terminating.~n",[self()])
@@ -44,7 +44,7 @@ loop(Id,ExoSelf_PId,Cx_PId,Scape,AName,VL,Parameters,{[From_PId|Fanin_PIds],MFan
 loop(Id,ExoSelf_PId,Cx_PId,Scape,AName,VL,Parameters,{[],MFanin_PIds},Acc)->
 	{Fitness,EndFlag} = actuator:AName(ExoSelf_PId,lists:reverse(Acc),Parameters,VL,Scape),
 	Cx_PId ! {self(),sync,Fitness,EndFlag},
-	loop(Id,ExoSelf_PId,Cx_PId,Scape,AName,VL,Parameters,{MFanin_PIds,MFanin_PIds},[]).
+	?MODULE:loop(Id,ExoSelf_PId,Cx_PId,Scape,AName,VL,Parameters,{MFanin_PIds,MFanin_PIds},[]).
 %The actuator process gathers the control signals from the neurons, appending them to the accumulator. The order in which the signals are accumulated into a vector is in the same order as the neuron ids are stored within NIds. Once all the signals have been gathered, the actuator sends cortex the sync signal, executes its function, and then again begins to wait for the neural signals from the output layer by reseting the Fanin_PIds from the second copy of the list.
 
 
@@ -72,6 +72,18 @@ xor_SendOutput(ExoSelf_PId,Output,_Parameters,VL,Scape)->
 	end.
 %xor_sim/2 function simply forwards the Output vector to the XOR simulator, and waits for the resulting Fitness and EndFlag from the simulation process.
 
+pb_SendOutput(ExoSelf_PId,Output,[committee|Parameters],VL,Scape)->
+	Committee_PId = whereis(committee),
+	Committee_PId ! {self(),push,Parameters,Output},
+	receive 
+		{Committee_PId,Fitness,HaltFlag}->
+			case get(opmode) of
+				test ->
+					{[Fitness,0,0],HaltFlag};
+				_ ->
+					{[Fitness],HaltFlag}
+			end
+	end;
 pb_SendOutput(ExoSelf_PId,Output,Parameters,VL,Scape)->
 	Scape ! {self(),push,Parameters,Output},
 	receive 
@@ -137,5 +149,41 @@ abc_pred(ExoSelf,[Output],Parameters,VL,Scape)->
 					{[Fitness,0,0],HaltFlag};
 				_ ->
 					{[Fitness],HaltFlag}
+			end
+	end.
+	
+general_predictor(ExoSelf_PId,Output,[committee|Parameters],VL,Scape)->
+	Committee_PId = whereis(committee),
+	Committee_PId ! {self(),act,predict_value,Parameters,Output},
+	receive 
+		{Committee_PId,Fitness,HaltFlag}->
+			case get(opmode) of
+				test ->
+					{[Fitness,0,0],HaltFlag};
+				_ ->
+					{[Fitness],HaltFlag}
+			end
+	end;
+general_predictor(ExoSelf_PId,Output,Parameters,VL,Scape)->
+	Scape ! {self(),act,predict_value,Parameters,Output},
+	receive 
+		{Scape,Fitness,HaltFlag}->
+			case get(opmode) of
+				test ->
+					{[Fitness,0,0],HaltFlag};
+				_ ->
+					{[Fitness],HaltFlag}
+			end
+	end.
+
+choose_OptimizationPhase(ExoSelf_PId,Output,Parameters,VL,Scape)->
+	Scape ! {self(),act,choose_OptimizationPhase,[get(opmode)|Parameters],Output},
+	receive 
+		{Scape,Fitness,HaltFlag}->
+			case get(opmode) of
+				test ->
+					{Fitness++[0,0],HaltFlag};
+				_ ->
+					{Fitness,HaltFlag}
 			end
 	end.

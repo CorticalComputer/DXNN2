@@ -163,7 +163,7 @@ sigmoid(Val)-> %(0 : 1)--Der:Y*(1-Y)
 	end,
 	1/(1+math:exp(-V)).
 
-sigmoid1(Val)-> %(-1 : 1) -- Der:1/((1+abs(val))*(1+abs(val)))
+sigmoid1(Val) -> %(-1 : 1) -- Der:1/((1+abs(val))*(1+abs(val)))
 	Val/(1+abs(Val)).
 
 avg(List)->

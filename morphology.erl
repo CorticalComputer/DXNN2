@@ -22,6 +22,9 @@
 -compile(export_all).
 -include("records.hrl").
 
+generate_id() ->
+	{MegaSeconds,Seconds,MicroSeconds} = now(), 
+	1/(MegaSeconds*1000000 + Seconds + MicroSeconds/1000000).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Get Init Standard Actuators/Sensors %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 get_InitSensors(Morphology)->
 	Sensors = morphology:Morphology(sensors),
@@ -36,7 +39,7 @@ get_Sensors(Morphology)->
 
 get_Actuators(Morphology)->
 	morphology:Morphology(actuators).
-
+	
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Get Init Substrate_CPPs/Substrate_CEPs %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 get_InitSubstrateCPPs(Dimensions,Plasticity)->
 	Substrate_CPPs = get_SubstrateCPPs(Dimensions,Plasticity),
@@ -173,8 +176,30 @@ epitopes(sensors)->
 	StartBenchIndex=561,
 	EndBenchIndex=840,
 	[#sensor{name=abc_pred,type=standard,scape={private,epitopes},format=no_geo,vl=SequenceLength,parameters=[TableName,StartIndex,EndIndex,StartBenchIndex,EndBenchIndex]}].
-
-
-generate_id() ->
-	{MegaSeconds,Seconds,MicroSeconds} = now(), 
-	1/(MegaSeconds*1000000 + Seconds + MicroSeconds/1000000).
+	
+general_predictor(actuators)->%hedge_fund_project
+	[
+		#actuator{name=general_predictor,type=standard,scape={private,scape_GTSA},format=no_geo,vl=1,parameters=[1]}%Parameters=[Prediction_ElementIndex]
+	];
+general_predictor(sensors)->%hedge_fund_project
+	[
+		#sensor{name=general_predictor,type=standard,scape={private,scape_GTSA},format=no_geo,vl=10*3,parameters=[10]}%Parameters=[TotRows]
+	].
+	
+llvm_phase_ordering(actuators)->
+	[
+		#actuator{name=choose_OptimizationPhase,type=standard,scape={private,scape_LLVMPhaseOrdering},format=no_geo,vl=55,parameters=[bzip2]}%54 optimizations + done
+	];
+llvm_phase_ordering(sensors)->
+	[
+		#sensor{name=get_BitCodeStatistics,type=standard,scape={private,scape_LLVMPhaseOrdering},format=no_geo,vl=31,parameters=[bzip2]}%30 features + module percentage
+	].
+	
+mnist(actuators)->
+	[
+		#actuator{name=mnist_read,type=standard,scape={private,mnist},format=no_geo,vl=55,parameters=[parser]}%54 optimizations + done
+	];
+mnist(sensors)->
+	[
+		#sensor{name=mnist_predict,type=standard,scape={private,mnist},format=no_geo,vl=31,parameters=[parser]}%30 features + module percentage
+	].
