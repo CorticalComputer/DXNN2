@@ -212,11 +212,13 @@ loop(S,gt)->
 					gen_server:cast(S#state.pm_pid,{S#state.agent_id,terminated,U_HighestFitness});
 				false -> %Continue training
 					%io:format("exoself state:~p~n",[S]),
-					reenter_PublicScape(S#state.public_scape_pids,[genotype:dirty_read({sensor,ets:lookup_element(IdsNPIds,Id,2)})||Id<-S#state.spids],[genotype:dirty_read({actuator,ets:lookup_element(IdsNPIds,Id,2)})||Id<-S#state.apids],S#state.specie_id,S#state.morphology,length(S#state.nids)),
+					reenter_PublicScape(S#state.public_scape_pids,[genotype:dirty_read({sensor,ets:lookup_element(IdsNPIds,Id,2)})||Id<-S#state.spids],[genotype:dirty_read({actuator,ets:lookup_element(IdsNPIds,Id,2)})||Id<-S#state.apids], S#state.specie_id, S#state.morphology, length(S#state.nids)),
 					TuningSelectionFunction=S#state.tuning_selection_f,
 					PerturbationRange = S#state.perturbation_range,
 					AnnealingParameter = S#state.annealing_parameter,
 					ChosenNIdPs=tuning_selection:TuningSelectionFunction(S#state.nids,S#state.generation,PerturbationRange,AnnealingParameter),
+					%NonChosen = S#state.nids -- [NId || {NId,_Spread}<-ChosenNIdPs],
+					%[ets:lookup_element(IdsNPIds,NId,2) ! {self(),dont_perturb} || NId <-NonChosen],
 					[ets:lookup_element(IdsNPIds,NId,2) ! {self(),weight_perturb,Spread} || {NId,Spread} <- ChosenNIdPs],
 					%io:format("ChosenNPIds:~p~n",[ChosenNIdPs]),
 					put(perturbed,ChosenNIdPs),
@@ -310,7 +312,7 @@ loop(S,test)->
 			end;
 		transpose([],RemAcc,ValAcc,VecAcc)->
 			transpose(RemAcc,[],[],[ValAcc|VecAcc]).
-			
+
 	spawn_CerebralUnits(IdsNPIds,CerebralUnitType,[Id|Ids])-> 
 		PId = CerebralUnitType:gen(self(),node()),
 		ets:insert(IdsNPIds,{Id,PId}), 
@@ -324,15 +326,26 @@ loop(S,test)->
 		Sensor_Scapes = [(genotype:dirty_read({sensor,Id}))#sensor.scape || Id<-Sensor_Ids], 
 		Actuator_Scapes = [(genotype:dirty_read({actuator,Id}))#actuator.scape || Id<-Actuator_Ids], 
 		Unique_Scapes = Sensor_Scapes++(Actuator_Scapes--Sensor_Scapes), 
-		Private_SN_Tuples=[{scape:gen(self(),node()),ScapeName} || {private,ScapeName}<-Unique_Scapes],
+		%Private_SN_Tuples=[{scape:gen(self(),node()),ScapeName} || {private,ScapeName}<-Unique_Scapes],
+		Private_SN_Tuples = spawn_PrivateScapes(Unique_Scapes,[]),
 		[ets:insert(IdsNPIds,{ScapeName,PId}) || {PId,ScapeName} <- Private_SN_Tuples], 
-		[ets:insert(IdsNPIds,{PId,ScapeName}) || {PId,ScapeName} <-Private_SN_Tuples],
+		[ets:insert(IdsNPIds,{PId,ScapeName}) || {PId,ScapeName} <- Private_SN_Tuples],
 		[PId ! {self(),ScapeName} || {PId,ScapeName} <- Private_SN_Tuples],
 		PublicScapePIds=enter_PublicScape(IdsNPIds,Sensor_Ids,Actuator_Ids,Agent_Id),
 		PrivateScapePIds=[PId || {PId,_ScapeName} <-Private_SN_Tuples],
 		io:format("PublicScapes:~p PrivateScapes:~p~n",[PublicScapePIds,PrivateScapePIds]),
 		{PrivateScapePIds,PublicScapePIds}.
 %The spawn_Scapes/3 function first extracts all the scapes that the sensors and actuators interface with, it then creates a filtered scape list which only holds unique scape records, after which it further only selects those scapes that are private, and spawns them.
+
+        spawn_PrivateScapes([{private,{M,F}}|Unique_Scapes],Acc)->
+            PId = spawn(M,F,[self()]),
+            spawn_PrivateScapes(Unique_Scapes,[{PId,M}|Acc]);
+        spawn_PrivateScapes([{private,ScapeName}|Unique_Scapes],Acc)->
+            spawn_PrivateScapes(Unique_Scapes,[{scape:gen(self(),node()),ScapeName}|Acc]);
+        spawn_PrivateScapes([],Acc)->
+            lists:reverse(Acc);
+        spawn_PrivateScapes([_|Unique_Scapes],Acc)->
+            spawn_PrivateScapes([],Acc).
 
 		enter_PublicScape(IdsNPIds,Sensor_Ids,Actuator_Ids,Agent_Id)->
 			A = genotype:dirty_read({agent,Agent_Id}),
@@ -369,6 +382,8 @@ loop(S,test)->
 		Fanout_Ids = S#sensor.fanout_ids,
 		Fanout_PIds = [ets:lookup_element(IdsNPIds,Id,2) || Id <- Fanout_Ids],
 		Scape=case S#sensor.scape of
+			{private,{M,F}}->
+				ets:lookup_element(IdsNPIds,M,2);
 			{private,ScapeName}->
 				ets:lookup_element(IdsNPIds,ScapeName,2);
 			{public,ScapeName}->
@@ -390,6 +405,8 @@ loop(S,test)->
 		Fanin_Ids = A#actuator.fanin_ids,
 		Fanin_PIds = [ets:lookup_element(IdsNPIds,Id,2) || Id <- Fanin_Ids],
 		Scape=case A#actuator.scape of
+			{private,{M,F}}->
+				ets:lookup_element(IdsNPIds,M,2);
 			{private,ScapeName}->
 				ets:lookup_element(IdsNPIds,ScapeName,2);
 			{public,ScapeName}->

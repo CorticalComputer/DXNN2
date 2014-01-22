@@ -195,11 +195,46 @@ llvm_phase_ordering(sensors)->
 		#sensor{name=get_BitCodeStatistics,type=standard,scape={private,scape_LLVMPhaseOrdering},format=no_geo,vl=31,parameters=[bzip2]}%30 features + module percentage
 	].
 	
-mnist(actuators)->
-	[
-		#actuator{name=mnist_read,type=standard,scape={private,mnist},format=no_geo,vl=55,parameters=[parser]}%54 optimizations + done
-	];
 mnist(sensors)->
 	[
 		#sensor{name=mnist_predict,type=standard,scape={private,mnist},format=no_geo,vl=31,parameters=[parser]}%30 features + module percentage
+	];
+mnist(actuators)->
+	[
+		#actuator{name=mnist_read,type=standard,scape={private,mnist},format=no_geo,vl=55,parameters=[parser]}%54 optimizations + done
 	].
+	
+general_PoleBalancing(sensors)->
+    scape_PoleBalancing:sensor_list();
+general_PoleBalancing(actuators)->
+    scape_PoleBalancing:actuator_list().
+    
+multiobjective_PoleBalancing(sensors)->
+    scape_DoublePoleBalancing_MO:sensor_list();
+multiobjective_PoleBalancing(actuators)->
+    scape_DoublePoleBalancing_MO:actuator_list().
+    
+xorAndXor(sensors)->
+    scape_XorAndXor:sensor_list();
+xorAndXor(actuators)->
+    scape_XorAndXor:actuator_list().
+    
+visualDescrimination(sensors)->
+    scape_VisualDescrimination:sensor_list();
+visualDescrimination(actuators)->
+    scape_VisualDescrimination:actuator_list().
+    
+roadFollowing(sensors)->
+    scape_RoadFollowing:sensor_list();
+roadFollowing(actuators)->
+    scape_RoadFollowing:actuator_list().
+    
+targetNavigation(sensors)->
+    scape_TargetNavigation:sensor_list();
+targetNavigation(actuators)->
+    scape_TargetNavigation:actuator_list().
+    
+searchAndDestroy(sensors)->
+    scape_SearchAndDestroy:sensor_list();
+searchAndDestroy(actuators)->
+    scape_SearchAndDestroy:actuator_list().

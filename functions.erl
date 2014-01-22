@@ -101,6 +101,12 @@ bin(Val)->
 		true -> 1;
 		false -> 0
 	end.
+	
+bip(Val)->
+	case Val > 0 of
+		true -> 1;
+		false -> -1
+	end.
 
 trinary(Val)->
 	if

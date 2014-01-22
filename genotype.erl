@@ -334,9 +334,9 @@ update_fingerprint(Agent_Id)->
 %generalize_EvoHist/2 generalizes the evolutionary history tuples by removing the unique element ids. Two neurons which are using exactly the same activation function, located exactly in the same layer, and using exactly the same weights will still have different unique ids, thus these ids must be removed to produce a more general set of tuples. There are 3 types of tuples in evo_hist list, with 3, 2 and 1 element ids. Once the evolutionary history list is generalized, it is returned to the caller.
 
 update_NNTopologySummary(Agent_Id)->%TODO: If the node is a circuit, then tot_neurons has to be calculated differently
-	A = mnesia:read({agent,Agent_Id}),
+	A = genotype:read({agent,Agent_Id}),
 	Cx_Id = A#agent.cx_id,
-	Cx = mnesia:read({cortex,Cx_Id}),
+	Cx = genotype:read({cortex,Cx_Id}),
 	N_Ids = Cx#cortex.neuron_ids,
 	{Tot_Neuron_ILs,Tot_Neuron_OLs,Tot_Neuron_ROs,AF_Distribution} = get_NodeSummary(N_Ids),
 	Type = A#agent.encoding_type,
@@ -385,7 +385,8 @@ read(TnK)->
 		[R] ->
 			R
 	end.
-	
+%read/1 accepts the tuple composed of a table name and a key: {TableName,Key}, which it then uses to read from the mnesia database and return the record to the caller. write/1 accepts a record and writes it to the database. delete/1 accepts a the tuple {TableName,Key}, and deletes the associated record from the table.
+
 dirty_read(TnK)->
 	case mnesia:dirty_read(TnK) of
 		[] ->
@@ -408,7 +409,6 @@ delete(TnK)->
 		mnesia:delete(TnK)
 	end,
 	mnesia:transaction(F).
-%read/1 accepts the tuple composed of a table name and a key: {TableName,Key}, which it then uses to read from the mnesia database and return the record to the caller. write/1 accepts a record and writes it to the database. delete/1 accepts a the tuple {TableName,Key}, and deletes the associated record from the table.
 
 dirty_delete(TnK)->
 	mnesia:dirty_delete(TnK).
@@ -478,31 +478,31 @@ print_ListForm(Agent_Id)->
 		ok.
 	
 delete_Agent(Agent_Id)->
-	[A] = mnesia:read({agent,Agent_Id}),
-	[Cx] = mnesia:read({cortex,A#agent.cx_id}),
-	[mnesia:delete({neuron,Id}) || Id <- Cx#cortex.neuron_ids],
-	[mnesia:delete({sensor,Id}) || Id <- Cx#cortex.sensor_ids],
-	[mnesia:delete({actuator,Id}) || Id <- Cx#cortex.actuator_ids],
-	mnesia:delete({cortex,A#agent.cx_id}),
-	mnesia:delete({agent,Agent_Id}),
+	A = genotype:read({agent,Agent_Id}),
+	Cx = genotype:read({cortex,A#agent.cx_id}),
+	[genotype:dirty_delete({neuron,Id}) || Id <- Cx#cortex.neuron_ids],
+	[genotype:dirty_delete({sensor,Id}) || Id <- Cx#cortex.sensor_ids],
+	[genotype:dirty_delete({actuator,Id}) || Id <- Cx#cortex.actuator_ids],
+	genotype:dirty_delete({cortex,A#agent.cx_id}),
+	genotype:dirty_delete({agent,Agent_Id}),
 	case A#agent.substrate_id of
 		undefined ->
 			ok;
 		Substrate_Id ->
-			[Substrate] = mnesia:read({substrate,Substrate_Id}),
-			[mnesia:delete({sensor,Id}) || Id <- Substrate#substrate.cpp_ids],
-			[mnesia:delete({actuator,Id})|| Id <- Substrate#substrate.cep_ids],
-			mnesia:delete({substrate,Substrate_Id})
+			Substrate = genotype:dirty_read({substrate,Substrate_Id}),
+			[genotype:dirty_delete({sensor,Id}) || Id <- Substrate#substrate.cpp_ids],
+			[genotype:dirty_delete({actuator,Id})|| Id <- Substrate#substrate.cep_ids],
+			genotype:dirty_delete({substrate,Substrate_Id})
 	end.
 %delete_Agent/1 accepts the id of an agent, and then delets that agent's genotype. This function assumes that the id of the agent will be removed from the specie's agent_ids list, and any other clean up procedures, by the calling function.
 
 delete_Agent(Agent_Id,safe)->
 	F = fun()->
-		[A] = genotype:read({agent,Agent_Id}),
-		[S] = genotype:read({specie,A#agent.specie_id}),
+		A = genotype:read({agent,Agent_Id}),
+		S = genotype:read({specie,A#agent.specie_id}),
 		Agent_Ids = S#specie.agent_ids,
 		%DeadPool = S#specie.dead_pool,
-		mnesia:write(S#specie{agent_ids = lists:delete(Agent_Id,Agent_Ids)}),
+		genotype:write(S#specie{agent_ids = lists:delete(Agent_Id,Agent_Ids)}),
 		delete_Agent(Agent_Id)
 	end,
 	Result=mnesia:transaction(F),
@@ -512,11 +512,12 @@ delete_Agent(Agent_Id,safe)->
 
 clone_Agent(Agent_Id)->
 	CloneAgent_Id = {generate_UniqueId(),agent},
+	%io:format("Inside clone_agent: Agent_Id:~p CloneAgent_Id~p~n",[Agent_Id,CloneAgent_Id]),
 	clone_Agent(Agent_Id,CloneAgent_Id).
 clone_Agent(Agent_Id,CloneAgent_Id)->
-	F = fun()->
-		A = read({agent,Agent_Id}),
-		Cx = read({cortex,A#agent.cx_id}),
+		A = dirty_read({agent,Agent_Id}),
+		%io:format("Agent:~p~n",[A]),
+		Cx = dirty_read({cortex,A#agent.cx_id}),
 		IdsNCloneIds = ets:new(idsNcloneids,[set,private]),
 		ets:insert(IdsNCloneIds,{bias,bias}),
 		ets:insert(IdsNCloneIds,{Agent_Id,CloneAgent_Id}),
@@ -530,45 +531,45 @@ clone_Agent(Agent_Id,CloneAgent_Id)->
 				clone_sensors(IdsNCloneIds,Cx#cortex.sensor_ids),
 				clone_actuators(IdsNCloneIds,Cx#cortex.actuator_ids),
 				U_EvoHist=map_EvoHist(IdsNCloneIds,A#agent.evo_hist),
-				write(Cx#cortex{
+				dirty_write(Cx#cortex{
 					id = CloneCx_Id,
 					agent_id = CloneAgent_Id,
 					sensor_ids = CloneS_Ids,
 					actuator_ids = CloneA_Ids,
 					neuron_ids = CloneN_Ids
 				}),
-				write(A#agent{
+				dirty_write(A#agent{
 					id = CloneAgent_Id,
 					cx_id = CloneCx_Id,
 					offspring_ids = [],
 					evo_hist = U_EvoHist
 				});
 			Substrate_Id ->
-				Substrate = read({substrate,A#agent.substrate_id}),
+				Substrate = dirty_read({substrate,A#agent.substrate_id}),
 				[CloneSubstrate_Id] = map_ids(IdsNCloneIds,[A#agent.substrate_id],[]),
 				CloneCPP_Ids = map_ids(IdsNCloneIds,Substrate#substrate.cpp_ids,[]),
 				CloneCEP_Ids = map_ids(IdsNCloneIds,Substrate#substrate.cep_ids,[]),
 				clone_neurons(IdsNCloneIds,Cx#cortex.neuron_ids),
 				clone_sensors(IdsNCloneIds,Cx#cortex.sensor_ids),
 				clone_actuators(IdsNCloneIds,Cx#cortex.actuator_ids),
-				Substrate = read({substrate,A#agent.substrate_id}),
+				Substrate = dirty_read({substrate,A#agent.substrate_id}),
 				clone_sensors(IdsNCloneIds,Substrate#substrate.cpp_ids),
 				clone_actuators(IdsNCloneIds,Substrate#substrate.cep_ids),
 				U_EvoHist=map_EvoHist(IdsNCloneIds,A#agent.evo_hist),
-				write(Substrate#substrate{
+				dirty_write(Substrate#substrate{
 					id = CloneSubstrate_Id,
 					agent_id = CloneAgent_Id,
 					cpp_ids = CloneCPP_Ids,
 					cep_ids = CloneCEP_Ids
 				}),
-				write(Cx#cortex{
+				dirty_write(Cx#cortex{
 					id = CloneCx_Id,
 					agent_id = CloneAgent_Id,
 					sensor_ids = CloneS_Ids,
 					actuator_ids = CloneA_Ids,
 					neuron_ids = CloneN_Ids
 				}),
-				write(A#agent{
+				dirty_write(A#agent{
 					id = CloneAgent_Id,
 					cx_id = CloneCx_Id,
 					substrate_id = CloneSubstrate_Id,
@@ -576,10 +577,8 @@ clone_Agent(Agent_Id,CloneAgent_Id)->
 					offspring_ids=[]
 				})
 		end,
-		ets:delete(IdsNCloneIds)
-	end,
-	mnesia:transaction(F),
-	CloneAgent_Id.
+		ets:delete(IdsNCloneIds),
+		CloneAgent_Id.
 %clone_Agent/2 accepts Agent_Id, and CloneAgent_Id, and then clones the agent, giving the clone CloneAgent_Id. The function first creates an ETS table to which it writes the ids of all the elements of the genotype, and their corresponding clone ids. Once all ids and clone ids have been generated, the function then begins to clone the actual elements. clone_Agent/2 first clones the neurons using clone_neurons/2, then the sensors using clone_sensonrs/2, and finally the actuators using clone_actuators. Once these elements are cloned, the function writes to database the clone versions of the cortex and the agent records, by writing to databse the original records with updated ids.
 
 
@@ -654,21 +653,35 @@ clone_Agent(Agent_Id,CloneAgent_Id)->
 		done.	
 %clone_neuron/2 accepts as input the name of the ets table and the list of neuron ids. It then goes through every neuron id, reads the neuron from the database, and updates all the ids (id, cx_id, output_ids, ro_ids) and input_idps from their original values, to their clone values stored in the ets table. Once the everything is updated, the new (clone) version of the neuron is written to the database.
 	
-	map_EvoHist(TableName,EvoHist)-> map_EvoHist(TableName,EvoHist,[]).
+	map_EvoHist(TableName,EvoHist)-> 
+		%io:format("EvoHist:~p~n",[EvoHist]),
+		map_EvoHist(TableName,EvoHist,[]).
 	map_EvoHist(TableName,[{MO,E1Id,E2Id,E3Id}|EvoHist],Acc)->
+		%io:format("1:~p~n",[{MO,E1Id,E2Id,E3Id}]),
 		Clone_E1Id = ets:lookup_element(TableName,E1Id,2),
 		Clone_E2Id = ets:lookup_element(TableName,E2Id,2),
 		Clone_E3Id = ets:lookup_element(TableName,E3Id,2),
 		map_EvoHist(TableName,EvoHist,[{MO,Clone_E1Id,Clone_E2Id,Clone_E3Id}|Acc]);
 	map_EvoHist(TableName,[{MO,E1Id,E2Id}|EvoHist],Acc)->
+		%io:format("2:~p~n",[{MO,E1Id,E2Id}]),
 		Clone_E1Id = ets:lookup_element(TableName,E1Id,2),
 		Clone_E2Id = ets:lookup_element(TableName,E2Id,2),
 		map_EvoHist(TableName,EvoHist,[{MO,Clone_E1Id,Clone_E2Id}|Acc]);
+	map_EvoHist(TableName,[{MO,E1Ids}|EvoHist],Acc) when is_list(E1Ids) ->
+		%io:format("E1Ids:~p~n",[{MO,E1Ids}]),
+		Clone_E1Ids = [ets:lookup_element(TableName,E1Id,2) || E1Id <- E1Ids],
+		%io:format("Clone_E1Ids:~p~n",[Clone_E1Ids]),
+		map_EvoHist(TableName,EvoHist,[{MO,Clone_E1Ids}|Acc]);
 	map_EvoHist(TableName,[{MO,E1Id}|EvoHist],Acc)->
+		%io:format("3:~p~n",[{MO,E1Id}]),
 		Clone_E1Id = ets:lookup_element(TableName,E1Id,2),
 		map_EvoHist(TableName,EvoHist,[{MO,Clone_E1Id}|Acc]);
 	map_EvoHist(_TableName,[],Acc)->
-		lists:reverse(Acc).
+		%io:format("4~n"),
+		lists:reverse(Acc);
+	map_EvoHist(TableName,Uknown,Acc)->
+		io:format("Severe crash in map_EvoHist, can't find the proper pattern match:~p~n",[{TableName,Uknown,Acc}]),
+		exit("AHHHHHHHHH").
 %map_EvoHist/2 is a wrapper for map_EvoHist/3, which in turn accepts the evo_hist list containing the mutation operator tuples that have been appplied to the NN system. The function is used when a clone of a NN system is created. The function updates the original Ids of the elements the mutation oeprators have been applied to, to the clone's Ids, so that the updated evo_hist can reflect the clone's topology, as if the mutation operators have been applied to it, and that it is not a clone. Once all the tuples in the evo_hist have been updated with the clone element ids, the list is reverted to its proper order, and the updated list is returned to the caller.
 	
 speciate(Agent_Id)->
@@ -702,7 +715,7 @@ test()->
 	Specie_Id = test,
 	Agent_Id = test,
 	CloneAgent_Id = test_clone,
-	SpecCon = #constraint{morphology=pole_balancing,connection_architecture=recurrent, population_evo_alg_f=generational,neural_afs=[tanh],agent_encoding_types=[neural],substrate_plasticities=[none]},
+	SpecCon = #constraint{morphology=multiobjective_PoleBalancing,connection_architecture=recurrent, population_evo_alg_f=generational,neural_afs=[tanh],agent_encoding_types=[neural],substrate_plasticities=[none]},
 	F = fun()->
 		construct_Agent(Specie_Id,Agent_Id,SpecCon),
 		clone_Agent(Specie_Id,CloneAgent_Id),
@@ -719,7 +732,7 @@ create_test()->
 	Agent_Id = test,
 	%SpecCon = #constraint{},
 	SpecCon = #constraint{
-		morphology=llvm_phase_ordering,
+		morphology=targetNavigation,
 		connection_architecture=recurrent,
 		population_evo_alg_f=generational,
 		neural_afs=[tanh],

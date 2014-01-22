@@ -101,7 +101,9 @@ create_Circuit(I_IdPs,CircuitLayerSpec)->
 		lrf_dae -> 
 			create_LRF_DAE(I_IdPs,CircuitLayerSpec,CircuitDynamics,Noise,TrainingSetup);
 		dnn ->
-			create_DNN(I_IdPs,CircuitLayerSpec,CircuitDynamics,Noise,{bp,1000});
+			create_DNN(I_IdPs,CircuitLayerSpec,CircuitDynamics,Noise,TrainingSetup);
+		competitive ->
+			create_Competitive(I_IdPs,CircuitLayerSpec,CircuitDynamics,Noise,TrainingSetup);
 		standard ->
 			create_Standard(I_IdPs,CircuitLayerSpec,CircuitDynamics,Noise,TrainingSetup)
 	end.
@@ -176,6 +178,8 @@ create_InitCircuit(Input_Specs,{CircuitDynamics,CircuitLayersSpec})->
 				undefined;
 			max_pooling->
 				undefined;
+			competitive ->
+				functions:normalize([random:uniform()-0.5|| _<-lists:seq(1,VL)]);
 			_->
 				[random:uniform()-0.5|| _<-lists:seq(1,VL)]
 		end.
@@ -196,6 +200,10 @@ create_InitCircuit(Input_Specs,{CircuitDynamics,CircuitLayersSpec})->
 				[{{random:uniform()-0.5,random:uniform()-0.5},{0,0},{0.1,0.1}}|| _<-lists:seq(1,VL)];
 			cplx7 ->
 				[{{random:uniform()-0.5,random:uniform()-0.5},{0,0},{0.1,0.1}}|| _<-lists:seq(1,VL)];
+			competitive ->
+				%normalizep([{random:uniform()-0.5,0.0,0.1}|| _<-lists:seq(1,VL)]);
+				functions:normalize([random:uniform()-0.5|| _<-lists:seq(1,VL)]);
+				%[{random:uniform()-0.5,0.0,0.1}|| _<-lists:seq(1,VL)]
 			avg_pooling->
 				undefined;
 			max_pooling->
@@ -380,6 +388,50 @@ calculate_output_std(Output,[],Acc)->
 	%io:format("Output:~p~n",[Output]),
 	{Output,lists:reverse(Acc)}.
 
+calculate_output_competitive(IVector,C)->
+	calculate_output_competitive(IVector,C#circuit.layers,[]).
+calculate_output_competitive(IVector,[L],Acc)->%TODO: Nothing is done for the multi layer competitive network, or the Acc variable.
+	%io:format("self():~p {IVector,L}:~p~n self:~p~n",[self(),{IVector,L},self()]),
+	Neurodes = L#layer.neurodes,
+	%io:format("Neurodes:~p~n",[Neurodes]),
+	{_Dot,Index,N}=closest(IVector,Neurodes),
+	%N#neurode.weights.
+	compose_competitive_output(Index,length(Neurodes),[]).
+	
+	compose_competitive_output(Target_Index,0,Acc)->
+		Acc;
+	compose_competitive_output(Target_Index,Target_Index,Acc)->
+		compose_competitive_output(Target_Index,Target_Index-1,[1|Acc]);
+	compose_competitive_output(Target_Index,Index,Acc)->
+		compose_competitive_output(Target_Index,Index-1,[0|Acc]).
+	
+	
+	closest(Vector,[N|Neurodes])->
+		Weights = N#neurode.weights,
+		Dot = calculate_dot(Weights,Vector,0),
+		closest(Vector,Neurodes,2,{Dot,1,N}).
+	closest(Vector,[N|Neurodes],Index,{Closest,ClosestIndex,ClosestN})->
+		Weights = N#neurode.weights,
+		Dot = calculate_dot(Weights,Vector,0),
+		case Dot > Closest of
+			true ->
+				closest(Vector,Neurodes,Index+1,{Dot,Index,N});
+			false ->
+				closest(Vector,Neurodes,Index+1,{Closest,ClosestIndex,ClosestN})
+		end;
+	closest(_Vector,[],Index,{ClosestDistance,ClosestIndex,ClosestN})->
+		{ClosestDistance,ClosestIndex,ClosestN}.
+		
+		calculate_dot([A|As],[B|Bs],Acc)->
+			calculate_dot(As,Bs,A*B+Acc);
+		calculate_dot([],[],Acc)->
+			Acc.
+		
+		calculate_distance([Val|Vector],[{W,_LP,_PDW}|Weights],Acc)->
+			calculate_distance(Vector,Weights,Acc+abs(Val-W));
+		calculate_distance([],[],Acc)->
+			Acc.
+			
 calculate_output_LRF(IVector,Receptive_Field,[L|Decoder],Acc)->
 	%io:format("{IVector,L}:~p~n self:~p~n",[{IVector,L},self()]),
 	Neurodes = L#layer.neurodes,
@@ -423,6 +475,7 @@ calculate_output_LRF(IVector,Receptive_Field,[L|Decoder],Acc)->
 		calculate_neurode_output_std(IVector,Weights,Bias,AF,0).
 		
 	calculate_neurodes_output(IVector,[N|Neurodes],OAcc,NAcc)->
+		%io:format("IVector:~p Length:~p~n",[IVector,length(IVector)]),
 		AF = N#neurode.af,
 		DotProduct = dot_product(IVector,N#neurode.weights,N#neurode.bias),
 		Output=functions:AF(DotProduct),
@@ -448,8 +501,10 @@ calculate_output_LRF(IVector,Receptive_Field,[L|Decoder],Acc)->
 			DotProduct = dot_product(IVector,Weights,Bias,0.0).
 			
 		dot_product([I|IVector],[{W,_PDW,_LP}|Weights],Bias,Acc) when ?f(I), ?f(W), ?f(Acc)->
+			%io:format("I1:~p~n",[I]),
 			dot_product(IVector,Weights,Bias,I*W+Acc);
 		dot_product([I|IVector],[{W,_PDW,_LP}|Weights],Bias,Acc) ->
+			%io:format("I2:~p~n",[I]),
 			dot_product(IVector,Weights,Bias,I*W+Acc);
 		dot_product([],[],undefined,Acc)->
 			Acc;
@@ -999,6 +1054,10 @@ test_create_LRF_DAE()->
 	CircuitLayerSpec=#layer{neurode_type=tanh,dynamics=dynamic,type=lrf_dae},
 	create_LRF_DAE([{void_id,10}],CircuitLayerSpec,static,0,{bp,1000}).
 
+test_create_Competitive()->
+	CircuitLayerSpec=#layer{neurode_type=undefined,tot_neurodes=3,dynamics=dynamic,type=competitive},
+	create_Competitive([{void_id,5}],CircuitLayerSpec,static,void,void).
+
 create_DNN(I_IdPs,CircuitLayersSpec,CircuitDynamics,Noise,TrainingSetup)->
 %Input must be one that defines a list of circuits to stack.
 %In some sense, it makes no sense to have multi-layered circuits, each layer can be parallelized.
@@ -1016,6 +1075,8 @@ create_DNN(I_IdPs,[CircuitLayerSpec|CircuitLayersSpec],CircuitDynamics,Noise,Tra
 			create_CDAE([{undefined,IVL}],CircuitLayerSpec,CircuitDynamics,Noise,TrainingSetup);
 		lrf_dae -> 
 			create_LRF_DAE([{undefined,IVL}],CircuitLayerSpec,CircuitDynamics,Noise,TrainingSetup);
+		competitive -> 
+			create_Competitive([{undefined,IVL}],CircuitLayerSpec,CircuitDynamics,Noise,TrainingSetup);
 		standard ->
 			create_Standard([{undefined,IVL}],CircuitLayerSpec,CircuitDynamics,Noise,TrainingSetup)
 	end,
@@ -1076,6 +1137,21 @@ create_DAE(I_IdPs,CircuitLayerSpec,CircuitDynamics,Noise,TrainingSetup)->
 create_Standard(I_IdPs,CircuitLayerSpec,CircuitDynamics,Noise,TrainingSetup)->
 	IVL = lists:sum([IVL||{_Input_Id,IVL}<-I_IdPs]),
 %	DecoderLayer = #layer{neurode_type=tanh,tot_neurodes=IVL,dynamics=static},
+	InitLayers = create_InitLayers([CircuitLayerSpec],IVL,[]),
+	%io:format("InitLayers created:~p~n",[InitLayers]),
+	#circuit{
+		i=I_IdPs,
+		ivl=IVL,
+		ovl=CircuitLayerSpec#layer.tot_neurodes,
+		dynamics=CircuitDynamics,
+		layers=InitLayers,
+		noise=Noise,
+		type = standard,
+		training=TrainingSetup
+	}.
+
+create_Competitive(I_IdPs,CircuitLayerSpec,CircuitDynamics,Noise,TrainingSetup)->
+	IVL = lists:sum([IVL||{_Input_Id,IVL}<-I_IdPs]),
 	InitLayers = create_InitLayers([CircuitLayerSpec],IVL,[]),
 	%io:format("InitLayers created:~p~n",[InitLayers]),
 	#circuit{
@@ -1193,11 +1269,26 @@ train_DAE(PCircuits,DAE,PrevDAE,Info,0,Index)->
 					train_DAE(PCircuits,DAE#circuit{err_acc=0},DAE,Info,Info#info.trn_end,Index)
 			end;
 		false ->
-			PrevDAE
+			case get(self()) == 1 of
+				true ->
+					erase(self()),
+					PrevDAE;
+				false ->
+					put(self(),1),
+					case is_integer(Index) of
+						true ->
+							train_DAE(PCircuits,DAE#circuit{err_acc=0},PrevDAE,Info,Info#info.trn_end,Index-1);
+						false ->
+							train_DAE(PCircuits,DAE#circuit{err_acc=0},PrevDAE,Info,Info#info.trn_end,Index)
+					end
+			end
 	end;
 train_DAE(PCircuits,DAE,PrevDAE,Info,SampleIndex,Index)->
+%	io:format("Index:~p~n",[SampleIndex]),
 	%io:format("PId:~p DAE_SampleIndex:~p~n",[self(),SampleIndex]),
-	[{Key,I,DO}] = ets:lookup(Info#info.name,random:uniform(Info#info.trn_end)),%lists:nth(random:uniform(length(TrainingSet)),TrainingSet),
+%	[{Key,I,DO}] = ets:lookup(Info#info.name,random:uniform(Info#info.trn_end)),%lists:nth(random:uniform(length(TrainingSet)),TrainingSet),
+	KeyStart = random:uniform(Info#info.trn_end - 10),
+	I = lists:flatten([Vec ||[{_,Vec,_}]<- [ets:lookup(Info#info.name,Key) || Key <- lists:seq(KeyStart,KeyStart+9)]]),
 	%io:format("I:~p DO:~p~n",[I,DO]),
 	U_I=calculate_output_dnn_short(I,PCircuits),
 	%io:format("I:~p~nU_I:~p~n",[I,U_I]),
@@ -1234,7 +1325,19 @@ train_CDAE(PCircuits,CDAE,PrevCDAE,Info,0,Index)->
 					train_CDAE(PCircuits,CDAE#circuit{err_acc=0},CDAE,Info,Info#info.trn_end,Index)
 			end;
 		false ->
-			PrevCDAE
+			case get(self()) == 1 of
+				true ->
+					erase(self()),
+					PrevCDAE;
+				false ->
+					put(self(),1),
+					case is_integer(Index) of
+						true ->
+							train_CDAE(PCircuits,CDAE#circuit{err_acc=0},PrevCDAE,Info,Info#info.trn_end,Index-1);
+						false ->
+							train_CDAE(PCircuits,CDAE#circuit{err_acc=0},PrevCDAE,Info,Info#info.trn_end,Index)
+					end
+			end
 	end;
 train_CDAE(PCircuits,CDAE,PrevCDAE,Info,SampleIndex,Index)->
 	%{I,DO} = lists:nth(random:uniform(length(TrainingSet)),TrainingSet),
@@ -1273,11 +1376,23 @@ train_LRF_DAE(PCircuits,LRF_DAE,PrevLRF_DAE,Info,0,Index)->
 					train_LRF_DAE(PCircuits,LRF_DAE#circuit{err_acc=0},LRF_DAE,Info,Info#info.trn_end,Index)
 			end;
 		false ->
-			PrevLRF_DAE
+			case get(self()) == 1 of
+				true ->
+					erase(self()),
+					PrevLRF_DAE;
+				false ->
+					put(self(),1),
+					case is_integer(Index) of
+						true ->
+							train_DAE(PCircuits,LRF_DAE#circuit{err_acc=0},PrevLRF_DAE,Info,Info#info.trn_end,Index-1);
+						false ->
+							train_DAE(PCircuits,LRF_DAE#circuit{err_acc=0},PrevLRF_DAE,Info,Info#info.trn_end,Index)
+					end
+			end
 	end;
 train_LRF_DAE(PCircuits,LRF_DAE,PrevLRF_DAE,Info,SampleIndex,Index)->
 	%{I,DO} = lists:nth(random:uniform(length(TrainingSet)),TrainingSet),
-	io:format("PId:~p LRF_DAE_SampleIndex:~p~n",[self(),SampleIndex]),
+%	io:format("PId:~p LRF_DAE_SampleIndex:~p~n",[self(),SampleIndex]),
 	[{Key,I,DO}] = ets:lookup(Info#info.name,random:uniform(Info#info.trn_end)),
 	U_I=calculate_output_dnn_short(I,PCircuits),
 	%io:format("I:~p~n",[I]),
@@ -1326,7 +1441,19 @@ train_Standard(PCircuits,C,PrevC,Info,0,Index)->
 					train_Standard(PCircuits,C#circuit{err_acc=0},C,Info,Info#info.trn_end,Index)
 			end;
 		false ->
-			PrevC
+			case get(self()) == 1 of
+				true ->
+					erase(self()),
+					PrevC;
+				false ->
+					put(self(),1),
+					case is_integer(Index) of
+						true ->
+							train_DAE(PCircuits,C#circuit{err_acc=0},PrevC,Info,Info#info.trn_end,Index-1);
+						false ->
+							train_DAE(PCircuits,C#circuit{err_acc=0},PrevC,Info,Info#info.trn_end,Index)
+					end
+			end
 	end;
 train_Standard(PCircuits,C,PrevC,Info,SampleIndex,Index)->
 	%io:format("SampleIndex:~p~n",[SampleIndex]),
@@ -1342,6 +1469,47 @@ train_Standard(PCircuits,C,PrevC,Info,SampleIndex,Index)->
 		{U_Layers2,_ErrorList} = layers_backprop(lists:reverse(U_Layers1),OutputError_List,[]),
 		C#circuit{layers=U_Layers2,err_acc=U_ErrAcc}.
 
+train_Competitive(PCircuits,C,PrevC,Info,0,0)->
+	C;
+train_Competitive(PCircuits,C,PrevC,Info,0,Index)->
+	train_Competitive(PCircuits,C,PrevC,Info,Info#info.trn_end,Index-1);
+train_Competitive(PCircuits,C,PrevC,Info,SampleIndex,Index)->
+	[{Key,I,DO}] = ets:lookup(Info#info.name,random:uniform(Info#info.trn_end)),%lists:nth(random:uniform(length(TrainingSet)),TrainingSet),
+	U_I=calculate_output_dnn_short(I,PCircuits),
+	[L] = C#circuit.layers,
+	Neurodes = L#layer.neurodes,
+	{TargetDistance,TargetIndex,TargetN}=closest(U_I,Neurodes),
+	%io:format("TargetDistance:~p TargetIndex:~p TargetN:~p~n",[TargetDistance,TargetIndex,TargetN]),
+	U_Neurodes=update_CompetitiveNeurodes(Neurodes,1,{TargetDistance,TargetIndex,U_I},[]),
+	%U_N = N#neurode{weights=train_(N#weights,
+	%Neurodes = L#layer.neurodes,
+	%U_Neurodes = lists:keyreplace(N#neurode.id, 2, Neurodes, U_N)
+	%io:format("Neurodes:~p~nU_Neurodes:~p~n~n",[Neurodes,U_Neurodes]),
+	U_C = C#circuit{layers=[L#layer{neurodes=U_Neurodes}]},
+	train_Competitive(PCircuits,U_C,PrevC,Info,SampleIndex-1,Index).
+	
+	update_CompetitiveNeurodes([N|Neurodes],TargetIndex,{Distance,TargetIndex,IVector},Acc)->
+		U_Weights=competitive_update(N#neurode.weights,IVector,1,[]),
+		U_N=N#neurode{weights=U_Weights},
+		%io:format("N:~p~nU_N:~p~n~n",[N,U_N]),
+		update_CompetitiveNeurodes(Neurodes,TargetIndex+1,{Distance,TargetIndex,IVector},[U_N|Acc]);
+	update_CompetitiveNeurodes([N|Neurodes],Index,{Distance,TargetIndex,IVector},Acc)->
+		%U_Weights=competitive_update(N#neurode.weights,IVector,-0.1,[]),
+		%U_N=N#neurode{weights=U_Weights},
+		update_CompetitiveNeurodes(Neurodes,Index,{Distance,TargetIndex,IVector},[N|Acc]);
+	update_CompetitiveNeurodes([],_Index,{_Distance,_TargetIndex,_IVector},Acc)->
+		lists:reverse(Acc).
+
+		%competitive_update([{W,_PDW,_LP}|Weights],[Val|IVector],LP,Acc)->
+		%	U_W = W+(Val-W)*LP,
+		%	competitive_update(Weights,IVector,LP,[{U_W,PDW,LP}|Acc]);
+		competitive_update([W|Weights],[Val|IVector],LP,Acc)->
+			%U_W = W+(Val-W)*LP,
+			U_W = W+LP*Val,
+			competitive_update(Weights,IVector,LP,[U_W|Acc]);
+		competitive_update([],[],_LP,Acc)->
+			functions:normalize(lists:reverse(Acc)).
+			
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%% BP TESTING OF VARIOUS CIRCUITS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1497,6 +1665,45 @@ test_bp_Standard(LayerLength,TrainingLength,TN)->
 		TotErr=lists:sum([calculate_OutputError(O,DO,0)||{O,DO}<-O_DO]),
 		ErrAvg=TotErr/(Info#info.trn_end),
 		io:format("O_DO:~p~nErrAvg:~p~n",[O_DO,ErrAvg]).
+
+test_Competitive(LayerLength,TrainingLength,TN)->
+	[{0,Info}]=ets:lookup(TN,0),
+	io:format("Info:~p~n",[Info]),
+	IVL = Info#info.ivl,
+	case undefined of
+		undefined ->
+			OVL = LayerLength;
+		OVL -> 
+			OVL
+	end,
+	Index_End = case Info#info.tst_end of
+		undefined ->
+			Info#info.trn_end;
+		Tst_End ->
+			Tst_End
+	end,
+	random:seed(now()),
+	CircuitLayerSpec=#layer{neurode_type=competitive,tot_neurodes=OVL,dynamics=dynamic,type=competitive},
+	NoiseLevel=0,
+	Competitive_Circuit=create_Competitive([{void_id,IVL}],CircuitLayerSpec,static,NoiseLevel,{competitive,TrainingLength}),
+	io:format("New Competitive Circuit:~p~n Init parameters:~p~n",[Competitive_Circuit,{LayerLength,TrainingLength,TN,IVL,OVL}]),
+	{SM,SS,SMS}=now(),
+	U_Competitive_Circuit = train_Competitive([],Competitive_Circuit,void,Info,Info#info.trn_end,TrainingLength),
+	{FM,FS,FMS}=now(),
+	io:format("Parameters:~w Start/Finish:~w~n",[{IVL,OVL,TrainingLength},{FM-SM,FS-SS,FMS-SMS}]),
+	io:format("LayerLength:~p TrainingLength:~p TN:~p~n",[{LayerLength,is_integer(LayerLength)},{TrainingLength,is_integer(TrainingLength)},{TN,is_atom(TN)}]),
+	CCircuit = Competitive_Circuit#circuit{id=integer_to_list(LayerLength)++"_"++integer_to_list(TrainingLength)++"_"++atom_to_list(TN)}.
+	
+%	ETS_Vectors = [ets:lookup_element(TN,Index,2) || Index<-lists:seq(1,Index_End)],
+%	CCircuit_Vectors = [calculate_output_competitive(Vector,CCircuit#circuit.layers,[]) || Vector <- ETS_Vectors],
+%	{ok, File_Output} = file:open(CCircuit#circuit.id++"_CompetitiveCluster_Output"++".txt", write),
+%	write_Matrix(File_Output,CCircuit_Vectors),
+%	file:close.
+
+%	ETS_Vectors = [ets:lookup_element(TN,I,2) || I<-lists:seq(1,Index_End)],
+%	CCircuit_Vectors = [calculate_output_competitive(Vector,CCircuit#circuit.layers,[]) || Vector <- ETS_Vectors],
+%	io:format("CCircuit_Vectors:~p~n",[CCircuit_Vectors]),
+%	U_Competitive_Circuit#circuit.id.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%% BP TESTING OF DEEP NEURAL NETWORK %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1727,19 +1934,120 @@ find_Chrom_correlation(C_Id,TN,ChromHMM_TN)->
 	[io:format(File_Output,"GMC Pearson top unique ~p: ~p~n",[TotTop,Top3]) || Top3 <-Top_Unique_Pearsons],
 	[io:format(File_Output,"GMC Spearman top unique ~p: ~p~n",[TotTop,Top3])|| Top3 <- Top_Unique_Spearmans],
 	io:format(File_Output,"Plot:~p~n",[bin_vectors(ETS_and_ChromHMM_Vectors,[],[])]),
+	file:close(File_Output).
+	%write_PearsonMatrix(C_Id,Pearson_CorVec),
+	%write_SpearmanMatrix(C_Id,Spearman_CorVec).
+	%write_All(ETS_and_ChromHMM_Vectors,DNN_Vectors,C_Id).
+
+find_Competitive_Chrom_correlation(LL,TN,ChromHMM_TN)->%TODO
+%	DNN = genotype:dirty_read({circuit,C_Id}),
+	CCircuit = test_Competitive(LL,75,TN),%Creates the competitive network and trains it on the table with 10 full table runs.
+	C_Id = CCircuit#circuit.id,
+	[{0,Info}]=ets:lookup(TN,0),
+	TotFiles = CCircuit#circuit.ovl,
+	Index_End = case Info#info.tst_end of
+		undefined ->
+			Info#info.trn_end;
+		Tst_End ->
+			Tst_End
+	end,
+	ETS_and_ChromHMM_Vectors = syncup(TN,ChromHMM_TN,1,Index_End,1,[]),
+	ETS_Vectors = [V||{V,_}<-ETS_and_ChromHMM_Vectors],
+	ChromHMM_Vectors = [V||{_,V}<-ETS_and_ChromHMM_Vectors],
+	%ETS_Vectors = [ets:lookup_element(TN,Index,2) || Index<-lists:seq(1,Index_End)],
+%	DNN_Vectors = [calculate_output_dnn_short(Vector,DNN#circuit.layers) || Vector<-ETS_Vectors],
+	DNN_Vectors = [calculate_output_competitive(Vector,CCircuit#circuit.layers,[]) || Vector <- ETS_Vectors],
+	ChromHMM_AvgVector = get_VecAvg(ChromHMM_Vectors),
+	DNN_AvgVector = get_VecAvg(DNN_Vectors),
+	ETS_Difs = get_VecDifs(ChromHMM_Vectors,ChromHMM_AvgVector),
+	DNN_Difs = get_VecDifs(DNN_Vectors,DNN_AvgVector),
+	Pearson_CorVec = get_Pearson(ETS_Difs,DNN_Difs),
+	
+	Ranked_ETS_Vectors= rank(ChromHMM_Vectors),
+	Ranked_DNN_Vectors= rank(DNN_Vectors),
+	Ranked_ETS_AvgVector= get_VecAvg(Ranked_ETS_Vectors),
+	Ranked_DNN_AvgVector= get_VecAvg(Ranked_DNN_Vectors),
+	Ranked_ETS_Difs= get_VecDifs(Ranked_ETS_Vectors,Ranked_ETS_AvgVector),
+	Ranked_DNN_Difs= get_VecDifs(Ranked_DNN_Vectors,Ranked_DNN_AvgVector),
+	Spearman_CorVec = get_Pearson(Ranked_ETS_Difs,Ranked_DNN_Difs),
+	io:format("Pearson_CorVec:~p~nSpearman_CorVec:~p~n",[Pearson_CorVec,Spearman_CorVec]),
+	{ok, File_Output} = file:open(C_Id++"_ChromHMM_Correlations"++".txt", write),
+	io:format(File_Output,"Pearson Correlation:~n",[]),
+	[io:format(File_Output,"GMC:~p~n",[Cor])||Cor<-Pearson_CorVec],
+	io:format(File_Output,"Spearman Correlation:~n",[]),
+	[io:format(File_Output,"GMC:~p~n",[Cor])||Cor<-Spearman_CorVec],
+	io:format(File_Output,"Top3 by ChromHMM TAG:~n",[]),
+	TotTop = 1,
+	Top_Pearsons = find_top(Pearson_CorVec,TotTop,data_extractor:chrom_HMMTags(),[]),
+	Top_Spearmans = find_top(Spearman_CorVec,TotTop,data_extractor:chrom_HMMTags(),[]),
+	[io:format(File_Output,"GMC Pearson top ~p: ~p~n",[TotTop,Top3]) || Top3 <-Top_Pearsons],
+	[io:format(File_Output,"GMC Spearman top ~p: ~p~n",[TotTop,Top3])|| Top3 <- Top_Spearmans],
+	Top_Unique_Pearsons = find_TopUnique(lists:flatten(Top_Pearsons),[]),
+	Top_Unique_Spearmans = find_TopUnique(lists:flatten(Top_Spearmans),[]),
+	[io:format(File_Output,"GMC Pearson top unique ~p: ~p~n",[TotTop,Top3]) || Top3 <-Top_Unique_Pearsons],
+	[io:format(File_Output,"GMC Spearman top unique ~p: ~p~n",[TotTop,Top3])|| Top3 <- Top_Unique_Spearmans],
+	io:format(File_Output,"Plot:~p~n",[bin_vectors(ETS_and_ChromHMM_Vectors,[],[])]),
 	file:close(File_Output),
 	write_PearsonMatrix(C_Id,Pearson_CorVec),
 	write_SpearmanMatrix(C_Id,Spearman_CorVec).
 	%write_All(ETS_and_ChromHMM_Vectors,DNN_Vectors,C_Id).
+
+find_Competitive_correlation(LL,TN)->
+	%DNN = genotype:dirty_read({circuit,C_Id}),
+	CCircuit = test_Competitive(LL,2,TN),%Creates the competitive network and trains it on the table with 10 full table runs.
+	C_Id = CCircuit#circuit.id,
+	[{0,Info}]=ets:lookup(TN,0),
+	TotFiles = CCircuit#circuit.ovl,
+	Index_End = case Info#info.tst_end of
+		undefined ->
+			Info#info.trn_end;
+		Tst_End ->
+			Tst_End
+	end,
+	ETS_Vectors = [ets:lookup_element(TN,Index,2) || Index<-lists:seq(1,Index_End)],
+	%DNN_Vectors = [calculate_output_dnn_short(Vector,DNN#circuit.layers) || Vector<-ETS_Vectors],
+	DNN_Vectors = [calculate_output_competitive(Vector,CCircuit#circuit.layers,[]) || Vector <- ETS_Vectors],
+	io:format("CCircuit_Vectors:~p~n",[DNN_Vectors]),
+	ETS_AvgVector = get_VecAvg(ETS_Vectors),
+	DNN_AvgVector = get_VecAvg(DNN_Vectors),
+	ETS_Difs = get_VecDifs(ETS_Vectors,ETS_AvgVector),
+	DNN_Difs = get_VecDifs(DNN_Vectors,DNN_AvgVector),
+	Pearson_CorVec = get_Pearson(ETS_Difs,DNN_Difs),
 	
+	Ranked_ETS_Vectors= rank(ETS_Vectors),
+	Ranked_DNN_Vectors= rank(DNN_Vectors),
+	Ranked_ETS_AvgVector= get_VecAvg(Ranked_ETS_Vectors),
+	Ranked_DNN_AvgVector= get_VecAvg(Ranked_DNN_Vectors),
+	Ranked_ETS_Difs= get_VecDifs(Ranked_ETS_Vectors,Ranked_ETS_AvgVector),
+	Ranked_DNN_Difs= get_VecDifs(Ranked_DNN_Vectors,Ranked_DNN_AvgVector),
+	Spearman_CorVec = get_Pearson(Ranked_ETS_Difs,Ranked_DNN_Difs),
+	io:format("Pearson_CorVec:~p~nSpearman_CorVec:~p~n",[Pearson_CorVec,Spearman_CorVec]),
+	{ok, File_Output} = file:open(C_Id++"_Correlations"++".txt", write),
+	io:format(File_Output,"Pearson Correlation:~n",[]),
+	[io:format(File_Output,"GMC:~p~n",[Cor])||Cor<-Pearson_CorVec],
+	io:format(File_Output,"Spearman Correlation:~n",[]),
+	[io:format(File_Output,"GMC:~p~n",[Cor])||Cor<-Spearman_CorVec],
+	file:close(File_Output).
+
 	write_PearsonMatrix(C_Id,Pearson_CorVec)->
-		{ok, File_Output} = file:open(atom_to_list(C_Id)++"_ChromHMM_PearsonMatrix"++".txt", write),
+		case is_atom(C_Id) of 
+			true ->
+				{ok, File_Output} = file:open(atom_to_list(C_Id)++"_ChromHMM_PearsonMatrix"++".txt", write);
+			false ->
+				{ok, File_Output} = file:open(C_Id++"_ChromHMM_PearsonMatrix"++".txt", write)
+		end,
 		write_Matrix(File_Output,Pearson_CorVec),
 		file:close(File_Output).
 	
 	write_SpearmanMatrix(C_Id,Spearman_CorVec)->
-		{ok, File_Output} = file:open(atom_to_list(C_Id)++"_ChromHMM_SpearmanMatrix"++".txt", write),
-		write_Matrix(File_Output,Spearman_CorVec).
+		case is_atom(C_Id) of
+			true ->
+				{ok, File_Output} = file:open(atom_to_list(C_Id)++"_ChromHMM_SpearmanMatrix"++".txt", write);
+			false ->
+				{ok, File_Output} = file:open(C_Id++"_ChromHMM_SpearmanMatrix"++".txt", write)
+		end,
+		write_Matrix(File_Output,Spearman_CorVec),
+		file:close(File_Output).
 	
 		write_Matrix(File_Output,[Vector])->
 			[io:format(File_Output,"~p ",[Val])||Val<-Vector];
@@ -1778,7 +2086,12 @@ find_Chrom_correlation(C_Id,TN,ChromHMM_TN)->
 		{ETS_Acc,lists:zip(ChromHMM_Acc,data_extractor:chrom_HMMTags())}.
 	
 	write_All([{Input_Vector,ChromHMMTag_Vector}|ETS_and_ChromHMM_Vectors],[DNN_Vector|DNN_Vectors],C_Id)->
-		{ok, File_Output} = file:open(atom_to_list(C_Id)++"_InputV_ChromHMMV_DNNV"++".txt", write),
+		case is_atom(C_Id) of
+			true ->
+				{ok, File_Output} = file:open(atom_to_list(C_Id)++"_InputV_ChromHMMV_DNNV"++".txt", write);
+			false ->
+				{ok, File_Output} = file:open(C_Id++"_InputV_ChromHMMV_DNNV"++".txt", write)
+		end,
 		io:format(File_Output,"%%% Concattenated: InputVector of length:~p, ChromHMM Tag Vector:~p DNN OutputVector:~p~n",[length(Input_Vector),length(ChromHMMTag_Vector),length(DNN_Vector)]),
 		write_All2([{Input_Vector,ChromHMMTag_Vector}|ETS_and_ChromHMM_Vectors],[DNN_Vector|DNN_Vectors],File_Output),
 		file:close(File_Output).
@@ -1843,7 +2156,13 @@ find_Chrom_correlation(C_Id,TN,ChromHMM_TN)->
 		[get_Pearson(ETS_DifsSquaredSummedVec,DNN_DifsSquaredSummed,Numerator_Vec,[]) || {DNN_DifsSquaredSummed,Numerator_Vec}<-lists:zip(DNN_DifsSquaredSummedVec,Numerator_Vecs)].
 		
 		get_Pearson([ETS_DifsSquaredSummed|ETS_DifsSquaredSummedVec],DNN_DifsSquaredSummed,[Numerator|Numerator_Vec],Acc)->
-			Result=Numerator/math:sqrt((ETS_DifsSquaredSummed*DNN_DifsSquaredSummed)),
+			io:format("ETS_DifsSquaredSummed*DNN_DifsSquaredSummed:~p~n",[{ETS_DifsSquaredSummed,DNN_DifsSquaredSummed}]),
+			Result=case ((ETS_DifsSquaredSummed*DNN_DifsSquaredSummed == 0) or (ETS_DifsSquaredSummed*DNN_DifsSquaredSummed == 0.0)) and (Numerator == 0.0) of
+				true ->
+					0;
+				false ->
+					Numerator/math:sqrt((ETS_DifsSquaredSummed*DNN_DifsSquaredSummed))
+			end,
 			get_Pearson(ETS_DifsSquaredSummedVec,DNN_DifsSquaredSummed,Numerator_Vec,[Result|Acc]);
 		get_Pearson([],_DNN_DifsSquaredSummed,[],Acc)->
 			lists:reverse(Acc).
@@ -2044,7 +2363,7 @@ bp_DNN(Id,TN,TrainingLength,LL_List,E_AF)->
 bp_DNN(Id,TN,TrainingLength,Ls)->
 	[{0,Info}]=ets:lookup(TN,0),
 	io:format("Info:~p~n",[Info]),
-	IVL = Info#info.ivl,
+	IVL = Info#info.ivl*10,
 	case Info#info.ovl of
 		undefined -> OVL = 30;
 		OVL -> OVL
@@ -2192,6 +2511,113 @@ bp_DNN(Id,TN,TrainingLength,Ls)->
 					U_C = C#circuit{layers=[U_Encoder,Decoder]},
 					{U_C,U_ErrorList}.
 
+%Prep: 
+%   Create a new table, DeepGeneExperiments (dg_experiment).
+%{id,
+%   active_circuits=[circuit_id,...],
+%   trained_circuits=[circuit_id,...],
+%   gmcs=[{circuit_id,gmc_index,pattern}...],
+%   top_unique_correlations=[{circuit_id,gmc_index,spearman_cor,pearson_cor},...],
+%   circuit_patterns=[layers,layers...]
+%}
+-record(dg_experiment,{
+    active_circuits=[],
+    training_circuits=[],
+    gmcs=[],
+    top_unique_correlations=[],
+    circuit_patterns=[],
+    population_size=10
+    }).
+    
+-record(unique_cor,{
+    circuit_id,
+    gmc_index,
+    spearman_cor,
+    pearson_cor
+    }).
+    
+-record(gmc,{
+    circuit_id,
+    gmc_index,
+    pattern
+    }).
+
+create_DGExperiment_Table()->
+    mnesia:create_table(dg_experiment,[{disc_copies, [node()]},{type,set},{attributes, record_info(fields,dg_experiment)}]).
+    
+new_DG_Experiment(Experiment_Id)->
+    random:seed(now()),
+    CircuitArchitectures=[
+	    [#layer{neurode_type=E_AF,tot_neurodes=LL,dynamics=static,type=dae,backprop_tuning=on} || LL<-[50,50,50,50,50]],
+	    [#layer{neurode_type=E_AF,tot_neurodes=LL,dynamics=static,type=dae,backprop_tuning=on} || LL<-[30,40,50,40,30]],
+	    [#layer{neurode_type=E_AF,tot_neurodes=LL,dynamics=static,type=dae,backprop_tuning=on} || LL<-[100,50,100]],
+	    [#layer{neurode_type=E_AF,tot_neurodes=LL,dynamics=static,type=dae,backprop_tuning=on} || LL<-[100,50,40,30,20]],
+	    [#layer{neurode_type=E_AF,tot_neurodes=LL,dynamics=static,type=dae,backprop_tuning=on} || LL<-[300,150,75,50]],
+	    [
+				#layer{neurode_type=sigmoid,tot_neurodes=60,dynamics=static,type=dae,backprop_tuning=on},
+				#layer{neurode_type=sigmoid,tot_neurodes=60,dynamics=static,type=dae,backprop_tuning=on},
+				#layer{neurode_type=sigmoid,tot_neurodes=60,dynamics=static,type=dae,backprop_tuning=on},xxx
+				#layer{neurode_type=sigmoid,tot_neurodes=60,dynamics=static,type=dae,backprop_tuning=on},
+				#layer{neurode_type=sigmoid,tot_neurodes=60,dynamics=static,type=dae,backprop_tuning=on},
+				#layer{neurode_type=sigmoid,tot_neurodes=60,dynamics=static,type=dae,backprop_tuning=on}
+	    ]
+	],
+	TotCircuits = length(CircuitArchitectures),
+	Init_Circuits = [(create_DNN([{void_id,IVL}],Layers,static,0.25,{bp,TrainingLength}))#circuit{id=genotype:generate_UniqueId()} || Layers <- CircuitArchitectures]
+	[genotype:dirty_write(Init_Circuit) || Init_Circuit<-Init_Circuits],
+	Init_ActiveCircuitIds=[C#circuit.id|| C<-Init_Circuits],
+	DG_Experiment=#dg_experiment{
+	    id = Experiment_Id,
+	    active_circuits = Init_ActiveCircuitIds,
+	    trained_circuits = [],
+	    gmcs=[],
+	    top_unique_correlations=[],
+	    circuit_patterns=[],
+	    population_size=10,
+	},
+	genotype:dirty_write(DG_Experiment),
+	continue_DG_Experiment(Experiment_Id).
+
+continue_DG_Experiment(Experiment_Id,0)->
+    print_DG_Experiment_Report(Experiment_Id);
+continue_DG_Experiment(Experiment_Id,PhaseIndex)->
+    %1. Experiment contains the Ids of the circuits, their stages, and their results.
+    %2. spawn TotCircuits number of circuits, of some default, or qually spaced out based sizes/depths
+    %3. Train the systems
+    %4. Run the correlation finder (and gmc finder?)
+    %5. Compare the current new found correlations to the already existing ones, replace with higher correlations, add new ones.
+    %6. Compare new GMCs to the old ones, and add them to the list. (The ID of the circuit, and the Index of the GMC)
+    %7. clone the circuits, pop top 1-2 layers, add new ones, and go to step 2.
+    
+    DG_Experiment = genotype:dirty_read({dg_experiment,Experiment_Id}),
+    DNN_IdPIdMap = [{DNN_Id,spawn(circuit,train_DNN,[genotype:dirty_read({circuit,DNN_Id}),Info,undefined,self()])} || DNN_Id<-DX_Experiment#dg_experiment.active_circuits],
+    gather_DNN_Completion_Acks(DNN_IdPIdMap),
+    U1_DG_Experiment=update_Correlations(DG_Experiment),
+    U2_DG_Experiment=update_GMCs(U1_DG_Experiment),
+    New_Circuit_Ids=generate_NewCircuits(U2_DG_Experiment#experiment.active_circuits,U2_DG_Experiment#experiment.population_size),
+    genotype:dirty_write(U2_DG_Experiment#experiment{active_circuits=New_Circuit_Ids,trained_circuits = lists:append(DG_Experiment#experiment.active_ids,U2_DG_Experiment#experiment.trained_circuits)}),
+    continue_DG_Experiment(Experiment_Id,PhaseIndex-1).
+    
+    update_Correlations(DG_Experiment)->
+        %1. Calculate spearmen and pearson correlation
+        %2. Compare the best unique ones to the existing ones in the top_unique_correlations list of tuples (f(O^2)?)
+        %3. Add new ones, ore replace if better.
+        %4. Update DG_Experiment with the new top_unique_correlations, and return the updated DG_Experiment
+        ok.%TODO
+        
+    update_GMCs(DG_Experiment)->
+        %1. Find GMC activation patterns
+        %2. Perform eucleadian distance comparison between new active_circuits gmcs and existing circuit_patterns, add new ones if they differ by significant enough margin.
+        %3. Return updated DG_Experiment
+        ok.%TODO
+        
+    generate_NewCircuits(Circuits,Pop_Size)->
+        %1. Randomly choose a circuit from Circuits
+        %2. Pop randomly between 1 and 3 layers from the top of the circuit
+        %3. Push to the circuit a random set of layers, between 1 and 3, of random type.
+        %4. Decrement Pop_Size, and recur.
+        ok.%TODO
+    
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%% BP ALGORITHM IMPLEMENTATION %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

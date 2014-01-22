@@ -54,12 +54,34 @@ dynamic(Ids,AgentGeneration,PerturbationRange,AnnealingParameter)->
 				extract_CurGenIdPs(Ids,Generation,AgeLimit,PR,AP,Acc)
 		end;
 	extract_CurGenIdPs([],_Generation,_AgeLimit,_PR,_AP,Acc)->
+		%io:format("CurGenIdPs:~p~n",[Acc]),
+		Acc.
+		
+	extract_CurGenIdPs([Id|Ids],Generation,AgeLimit,PR,AP,Acc,atomic)->
+		case Id of
+			{_,neuron}->
+				N = genotype:read({neuron,Id}),
+				Gen = N#neuron.generation;
+			{_,actuator}->
+				A = genotype:read({actuator,Id}),
+				Gen = A#actuator.generation
+		end,
+		case Gen >= (Generation-AgeLimit) of
+			true ->
+				Age = Generation-Gen,
+				Spread = PR*math:pi()*math:pow(AP,Age),%math:pi()*math:pow(0.5,Age),
+				extract_CurGenIdPs(Ids,Generation,AgeLimit,PR,AP,[{Id,Spread}|Acc],atomic);
+			false ->
+				extract_CurGenIdPs(Ids,Generation,AgeLimit,PR,AP,Acc,atomic)
+		end;
+	extract_CurGenIdPs([],_Generation,_AgeLimit,_PR,_AP,Acc,atomic)->
 		Acc.
 %The extract_CurGenIdPs/6 composes an id pool from neurons and actuators who are younger than the AgeLimit parameter. This is calculated by comparing the generation when they were created or touched by mutation, with that of the agent which ages with every topological mutation phase. Id pool accumulates not just the neurons but also the spread which will be used for the synaptic weight perturbation. The spread is calculated by multiplying the perturbation_range variable by math:pi(), and then multiplied by the annealing factor which is math:pow(AnnealingParameter,Age). Annealing parameter is less than 1, thus the greater the age of the neuron, the lower the Spread will be.
 
 dynamic_random(Ids,AgentGeneration,PerturbationRange,AnnealingParameter) ->
-	%io:format("AnnealingParamter:~p~n",[AnnealingParameter]),
-	Chosen_IdPs = case extract_CurGenIdPs(Ids,AgentGeneration,math:sqrt(1/random:uniform()),PerturbationRange,AnnealingParameter,[]) of
+	AgeLimit = math:sqrt(1/random:uniform()),
+	%io:format("AnnealingParamter:~p AgeLimit:~p~n",[AnnealingParameter,AgeLimit]),
+	Chosen_IdPs = case extract_CurGenIdPs(Ids,AgentGeneration,AgeLimit,PerturbationRange,AnnealingParameter,[]) of
 		[] ->
 			[Id|_] = Ids,
 			[{Id,PerturbationRange*math:pi()}];

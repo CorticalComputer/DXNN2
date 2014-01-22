@@ -136,7 +136,7 @@ create()->
 reset()-> 
 	mnesia:stop(), 
 	ok = mnesia:delete_schema([node()]), 
-	polis:create(). 
+	polis:create().
 %The create/0 function sets up new mnesia databases composed of the dx, cortex, neuron, sensor, actuator, polis, and population, and specie tables. The reset/0 function deletes the schema, and recreates a fresh database from scratch.
 
 %Start/Stop enviromental modules: DBs, Environments, Network Access systems and tools... 

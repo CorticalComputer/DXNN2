@@ -42,7 +42,12 @@ loop(Id,ExoSelf_PId,Cx_PId,Scape,AName,VL,Parameters,{[From_PId|Fanin_PIds],MFan
 			ok
 	end;
 loop(Id,ExoSelf_PId,Cx_PId,Scape,AName,VL,Parameters,{[],MFanin_PIds},Acc)->
-	{Fitness,EndFlag} = actuator:AName(ExoSelf_PId,lists:reverse(Acc),Parameters,VL,Scape),
+	case AName of
+	    {M,F}->
+	        {Fitness,EndFlag} = M:F(ExoSelf_PId,lists:reverse(Acc),Parameters,VL,Scape);
+	    _->
+	        {Fitness,EndFlag} = actuator:AName(ExoSelf_PId,lists:reverse(Acc),Parameters,VL,Scape)
+	end,
 	Cx_PId ! {self(),sync,Fitness,EndFlag},
 	?MODULE:loop(Id,ExoSelf_PId,Cx_PId,Scape,AName,VL,Parameters,{MFanin_PIds,MFanin_PIds},[]).
 %The actuator process gathers the control signals from the neurons, appending them to the accumulator. The order in which the signals are accumulated into a vector is in the same order as the neuron ids are stored within NIds. Once all the signals have been gathered, the actuator sends cortex the sync signal, executes its function, and then again begins to wait for the neural signals from the output layer by reseting the Fanin_PIds from the second copy of the list.

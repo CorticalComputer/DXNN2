@@ -206,54 +206,150 @@ mutate_weights(Agent_Id)->
 	Cx_Id = A#agent.cx_id,
 	Cx = genotype:read({cortex,Cx_Id}),
 	N_Ids = Cx#cortex.neuron_ids,
+	Generation = A#agent.generation,
+	PerturbationRange = A#agent.perturbation_range,
+	AnnealingParameter = A#agent.annealing_parameter,
+	TuningSelectionFunction = A#agent.tuning_selection_f,
 
-	N_Id = lists:nth(random:uniform(length(N_Ids)),N_Ids),
-	N = genotype:read({neuron,N_Id}),
-	Input_IdPs = N#neuron.input_idps,
-	U_Input_IdPs = case N#neuron.af of
-		{circuit,_InitSpec} ->
-			U_Layers=circuit:perturb_weights(Input_IdPs#circuit.layers,math:pi()),
-			Input_IdPs#circuit{layers=U_Layers};
-		_ ->
-			perturb_IdPs(Input_IdPs)
+	Perturbed_NIds=case multiple of
+		multiple ->	
+			%%%%%%%%%%%%%%%%%% Multiple Neurons Perturbed
+			%	io:format("TuninSelectionFunction:~p N_Ids:~p Generation:~p PerturbationRange:~p AnnealingParameter:~p~n",[TuningSelectionFunction,N_Ids,Generation,PerturbationRange,AnnealingParameter]),
+				ChosenNIdPs=tuning_selection:TuningSelectionFunction(N_Ids,Generation,PerturbationRange,AnnealingParameter),
+				%io:format("ChosenNIdPs:~p~n",[ChosenNIdPs]),
+				%[{N_Id,Spread}|_] = ChosenNIdPs,
+				%perturb_neural_weights(ChosenNIdPs),
+				[mutate_weights(N_Id,Spread)|| {N_Id,Spread}<-ChosenNIdPs],
+				[N_Id || {N_Id,_Spread}<-ChosenNIdPs];
+			%%%%%%%%%%%%%%%%%%
+		single ->
+			%%%%%%%%%%%%%%%%%% One Neuron Perturbed
+				N_Id = lists:nth(random:uniform(length(N_Ids)),N_Ids),
+				N = genotype:read({neuron,N_Id}),
+				Input_IdPs = N#neuron.input_idps,
+				%io:format("N#neuron.af:~p~n",[N#neuron.af]),
+				U_Input_IdPs = case N#neuron.af of
+					{circuit,_InitSpec} ->
+						U_Layers=circuit:perturb_weights(Input_IdPs#circuit.layers,math:pi()),
+						Input_IdPs#circuit{layers=U_Layers};
+					_ ->
+						perturb_IdPs(Input_IdPs)
+				end,
+				U_N = N#neuron{input_idps = U_Input_IdPs},
+				genotype:write(U_N),
+				N_Id
+			%%%%%%%%%%%%%%%%%%
 	end,
-	U_N = N#neuron{input_idps = U_Input_IdPs},
 	EvoHist = A#agent.evo_hist,
-	U_EvoHist = [{mutate_weights,N_Id}|EvoHist],
+	U_EvoHist = [{mutate_weights,Perturbed_NIds}|EvoHist],
 	U_A = A#agent{evo_hist = U_EvoHist},
-	genotype:write(U_N),
 	genotype:write(U_A).
 %The mutate_weights/1 function accepts the Agent_Id parameter, extracts the NN's cortex, and then chooses a random neuron belonging to the NN with a uniform distribution probability. Then the neuron's input_idps list is extracted, and the function perturb_IdPs/1 is used to perturb/mutate the weights. Once the Input_IdPs have been perturbed, the agent's evolutionary history, EvoHist is updated to include the successfully applied mutate_weights mutation operator. Then the updated Agent and the updated neuron are written to the database.
+
+	dynamic_random(Ids,AgentGeneration,PerturbationRange,AnnealingParameter) ->
+		%io:format("AnnealingParamter:~p~n",[AnnealingParameter]),
+		MP = math:sqrt(1/random:uniform()),
+		Chosen_IdPs = case extract_CurGenIdPs(Ids,AgentGeneration,MP,PerturbationRange,AnnealingParameter,[],atomic) of
+			[] ->
+				[Id|_] = Ids,
+				[{Id,PerturbationRange*math:pi()}];
+			Extracted_IdPs->
+				Extracted_IdPs
+		end,
+		%io:format("ChosenN_IdPs:~p~n",[Chosen_IdPs]),
+		Tot_Neurons = length(Chosen_IdPs),
+		MutationP = 1/math:sqrt(Tot_Neurons),
+		tuning_selection:choose_randomIdPs(MutationP,Chosen_IdPs).
+
+		extract_CurGenIdPs([Id|Ids],Generation,AgeLimit,PR,AP,Acc,atomic)->
+			case Id of
+				{_,neuron}->
+					N = genotype:read({neuron,Id}),
+					Gen = N#neuron.generation;
+				{_,actuator}->
+					A = genotype:read({actuator,Id}),
+					Gen = A#actuator.generation
+			end,
+			%io:format("Gen:~p~n",[Gen]),
+			case Gen >= (Generation-AgeLimit) of
+				true ->
+					Age = Generation-Gen,
+					Spread = PR*math:pi()*math:pow(AP,Age),%math:pi()*math:pow(0.5,Age),
+					extract_CurGenIdPs(Ids,Generation,AgeLimit,PR,AP,[{Id,Spread}|Acc],atomic);
+				false ->
+					extract_CurGenIdPs(Ids,Generation,AgeLimit,PR,AP,Acc,atomic)
+			end;
+		extract_CurGenIdPs([],_Generation,_AgeLimit,_PR,_AP,Acc,atomic)->
+			Acc.
+
+	perturb_neural_weights([{N_Id,Spread}|N_IdPs])->
+		N = genotype:read({neuron,N_Id}),
+		Input_IdPs = N#neuron.input_idps,
+		%io:format("N#neuron.af:~p~n",[N#neuron.af]),
+		U_Input_IdPs = case N#neuron.af of
+			{circuit,_InitSpec} ->
+				U_Layers=circuit:perturb_weights(Input_IdPs#circuit.layers,Spread),
+				Input_IdPs#circuit{layers=U_Layers};
+			_ ->
+				perturb_IdPs(Input_IdPs)
+		end,
+		U_N = N#neuron{input_idps = U_Input_IdPs},
+		genotype:dirty_write(U_N),
+		%io:format("N:~p~nU_N:~p~n",[N,U_N]),
+		perturb_neural_weights(N_IdPs);
+	perturb_neural_weights([])->
+		ok.
+
+	mutate_weights(N_Id,Spread)->
+		N = genotype:read({neuron,N_Id}),
+		Input_IdPs = N#neuron.input_idps,
+		Input_MIdPs = N#neuron.input_idps_modulation,
+		PF = N#neuron.pf,
+%		io:format("Neuron:~p~n",[N]),
+		case N#neuron.af of
+			{circuit,_}->
+				Perturbed_SIPIdPs=circuit:perturb_circuit(Input_IdPs,Spread),
+				Perturbed_MIPIdPs=perturb_IPIdPs(Spread,Input_MIdPs);
+			_ ->
+				Perturbed_SIPIdPs=perturb_IPIdPs(Spread,Input_IdPs),
+				Perturbed_MIPIdPs=perturb_IPIdPs(Spread,Input_MIdPs)
+		end,
+		Perturbed_PF=neuron:perturb_PF(Spread,PF),
+		U_N=N#neuron{input_idps=Perturbed_SIPIdPs, input_idps_modulation=Perturbed_MIPIdPs, pf=Perturbed_PF},
+%		io:format("U_Neuron:~p~n",[U_N]),
+		genotype:write(U_N).
+		
+		perturb_IPIdPs(Spread,[])->
+			[];
+		perturb_IPIdPs(Spread,Input_IdPs)->
+			Tot_Weights=lists:sum([length(WeightsP) || {_Input_Id,WeightsP}<-Input_IdPs]),
+			MP = 1/math:sqrt(Tot_Weights),
+			%MP = 1/math:sqrt(length(Input_IdPs)),
+%			io:format("MP:~p~n",[MP]),
+			perturb_IPIdPs(Spread,MP,Input_IdPs,[]).
+		perturb_IPIdPs(Spread,MP,[{Input_Id,WeightsP}|Input_IdPs],Acc)->
+			%MP = 1/math:sqrt(length(WeightsP)),
+			U_WeightsP = case random:uniform() < MP of
+				true ->
+					neuron:perturb_weightsP(Spread,1/math:sqrt(length(WeightsP)),WeightsP,[]);
+				false ->
+					WeightsP
+			end,
+			perturb_IPIdPs(Spread,MP,Input_IdPs,[{Input_Id,U_WeightsP}|Acc]);
+		perturb_IPIdPs(_Spread,_MP,[],Acc)->
+			lists:reverse(Acc).
 	
 	perturb_IdPs(Input_IdPs)->
+		%io:format("Input_IdPs:~p~n",[Input_IdPs]),
 		Tot_WeightsP=lists:sum([length(WeightsP) || {_Input_Id,WeightsP}<-Input_IdPs]),
 		MP = 1/math:sqrt(Tot_WeightsP),
 		perturb_IdPs(MP,Input_IdPs,[]).
 	perturb_IdPs(MP,[{Input_Id,WeightsP}|Input_IdPs],Acc)->
-		U_WeightsP = perturb_weightsP(MP,WeightsP,[]),
+		U_WeightsP = neuron:perturb_weightsP(?DELTA_MULTIPLIER,MP,WeightsP,[]),
 		perturb_IdPs(MP,Input_IdPs,[{Input_Id,U_WeightsP}|Acc]);
 	perturb_IdPs(_MP,[],Acc)->
 		lists:reverse(Acc).
 %perturb_IdPs/1 accepts the Input_IdPs list of the format:[{Id,Weights}...], calculates the total number of weights in the Input_IdPs, and then calculates the mutation probability MP, which is 1/sqrt(Tot_Weights). Once the mutation probability is calculated, each weight in the Input_IdPs list has a chance of MP to be perturbed/mutated. Once all the weights in the Input_IdPs list had a chance of being mutated, the updated Input_IdPs is returned to the caller.
-
-	perturb_weightsP(MP,[{W,PL}|Weights],Acc)->
-		U_W = case random:uniform() < MP of
-			true->
-				sat((random:uniform()-0.5)*?DELTA_MULTIPLIER+W,-?SAT_LIMIT,?SAT_LIMIT);
-			false ->
-				W
-		end,
-		perturb_weightsP(MP,Weights,[{U_W,PL}|Acc]);
-	perturb_weightsP(_MP,[],Acc)->
-		lists:reverse(Acc).
-%perturb_weightsP/3 is called with the mutation probability MP, a weights list, and an empty list, [], to be used as an accumulator. The function goes through every weight, where every weight has a chance of MP to be mutated/perturbed. The perturbations have a random intensity between -Pi/2 and Pi/2. Once all the weights in the weights list had a chance of being perturbed, the updated weights list is reversed back to its original order, and returned back to the caller.
-		sat(Val,Min,Max)->
-			if
-				Val < Min -> Min;
-				Val > Max -> Max;
-				true -> Val
-			end.
-%sat/3 calculates whether Val is between Min and Max values, if it is, then val is returned as is. If Val is less than Min, then Min is returned, if Val is greater than Max, then Max is returned.
 
 %{add_CircuitLayer,3},
 %{add_CircuitNode,3},
@@ -261,18 +357,18 @@ mutate_weights(Agent_Id)->
 add_CircuitNode(Agent_Id)->
 	A = genotype:read({agent,Agent_Id}),
 	Cx_Id = A#agent.cx_id,
-	[Cx] = mnesia:read({cortex,Cx_Id}),
+	Cx = genotype:read({cortex,Cx_Id}),
 	io:format("Inside add_CircuitNode(Agent_Id)~n"),
 	NId_Pool=Cx#cortex.neuron_ids,
 	N_Id = lists:nth(random:uniform(length(NId_Pool)),NId_Pool),	
-	[N] = mnesia:read({neuron,N_Id}),
+	N = genotype:read({neuron,N_Id}),
 	case N#neuron.af of
 		{circuit,_InitSpec} ->
 			C = N#neuron.input_idps,
 			U_Layers=circuit:add_neurode(C#circuit.layers,void),
 			U_C = C#circuit{layers=U_Layers},
 			U_N = N#neuron{input_idps = U_C},
-%			mnesia:write(U_N),
+%			genotype:write(U_N),
 %			update_EvoHist(DX_Id,add_CircuitNode,void,N_Id,void,void,void)
 			EvoHist = A#agent.evo_hist,
 			U_EvoHist = [{add_circuit_node,N_Id}|EvoHist],
@@ -286,18 +382,18 @@ add_CircuitNode(Agent_Id)->
 add_CircuitLayer(Agent_Id)->
 	A = genotype:read({agent,Agent_Id}),
 	Cx_Id = A#agent.cx_id,
-	[Cx] = mnesia:read({cortex,Cx_Id}),
+	Cx = genotype:read({cortex,Cx_Id}),
 	io:format("add_CircuitLayer(Agent_Id)~n"),
 	NId_Pool=Cx#cortex.neuron_ids,
 	N_Id = lists:nth(random:uniform(length(NId_Pool)),NId_Pool),	
-	[N] = mnesia:read({neuron,N_Id}),
+	N = genotype:read({neuron,N_Id}),
 	case N#neuron.af of
 		{circuit,_InitSpec} ->
 			C = N#neuron.input_idps,
 			U_Layers=circuit:add_layer(C#circuit.layers,void),
 			U_C = C#circuit{layers=U_Layers},
 			U_N = N#neuron{input_idps = U_C},
-%			mnesia:write(U_N),
+%			genotype:write(U_N),
 %			update_EvoHist(DX_Id,add_layer,void,N_Id,void,void,void)
 			EvoHist = A#agent.evo_hist,
 			U_EvoHist = [{add_circuit_layer,N_Id}|EvoHist],

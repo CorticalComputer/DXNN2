@@ -40,12 +40,10 @@ check_table(TableName)->
 start(URL,SplitVals,FileName)->
 	start(URL,SplitVals,FileName,?PACKAGER).
 start(URL,SplitVals,FileName,Packager)->
-	case file:read_file(URL) of
-		{ok,Data} ->
-			file:close(URL),
-			List = binary_to_list(Data),
-			Extracted_Values = list_to_dvals(SplitVals,List,[]),
-			store(Extracted_Values,FileName,Packager);
+	case file:open(URL,[read]) of
+		{ok,IODevice} ->io:format("IODevice:~p~n",[IODevice]),
+			store(SplitVals,IODevice,FileName,Packager),
+			file:close(IODevice);
 		{error,Error} ->
 			io:format("Error:~p~n",[Error])
 	end.
@@ -96,26 +94,26 @@ list_to_number(List)->
 	end.
 	
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Packagers %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-store(Extracted_Values,Name,Packager)->
+store(SplitVals,IODevice,Name,Packager)->
 	TableName = ets:new(Name,[set,public,named_table]),
-	data_extractor:Packager(TableName,Extracted_Values,1),
+	data_extractor:Packager(SplitVals,TableName,IODevice,1),
 	ets:tab2file(TableName,Name),
 	ets:delete(TableName).
 	
-simple_store(TableName,[Line|Lines],Index)->
+simple_store(SplitVals,TableName,[Line|Lines],Index)->
 	ets:insert(TableName,{Index,Line}),
-	simple_store(TableName,Lines,Index+1);
-simple_store(TableName,[],Index)->
+	simple_store(SplitVals,TableName,Lines,Index+1);
+simple_store(SplitVals,TableName,[],Index)->
 	io:format("Stored to ETS table:~p Index reached:~p~n",[TableName,Index-1]).
 
 %0 0 0 -3.639 0.418 -0.670 1.779 -0.168 1.627 -0.388 0.529 -0.874 -0.814  0
 %data_extractor:start("Vowel_Recognition",[32,32,32,32,32,32,32,32,32,32,32,32,32,skip,10],vowel_recognition).  	
-vowel_recognition(TableName,[Line|Lines],Index)->
+vowel_recognition(SplitVals,TableName,[Line|Lines],Index)->
 	{Type,Remainder}=lists:split(3,Line),
 	{Features,Classification} = lists:split(10,Remainder),
-	ets:insert(TableName,{Index,Type,Features,Classification}),
-	vowel_recognition(TableName,Lines,Index+1);
-vowel_recognition(TableName,[],Index)->
+	ets:insert(SplitVals,TableName,{Index,Type,Features,Classification}),
+	vowel_recognition(SplitVals,TableName,Lines,Index+1);
+vowel_recognition(SplitVals,TableName,[],Index)->
 	io:format("Stored to ETS table:~p Index reached:~p~n",[TableName,Index-1]).
 
 %*CM078: 0.0491 0.0279 0.0592 0.1270 0.1772 0.1908 0.2217 0.0768 0.1246 0.2028 0.0947 0.2497 0.2209 0.3195 0.3340 0.3323 0.2780 0.2975 0.2948 0.1729 0.3264 0.3834 0.3523 0.5410 0.5228 0.4475 0.5340 0.5323 0.3907 0.3456 0.4091 0.4639 0.5580 0.5727 0.6355 0.7563 0.6903 0.6176 0.5379 0.5622 0.6508 0.4797 0.3736 0.2804 0.1982 0.2438 0.1789 0.1706 0.0762 0.0238 0.0268 0.0081 0.0129 0.0161 0.0063 0.0119 0.0194 0.0140 0.0332 0.0439}
@@ -154,11 +152,11 @@ mines_vs_rocks(TableName,[{_,Line}|Lines],Index,TestFlag)->
 mines_vs_rocks(_TableName,[],Index,_TestFlag)->
 	Index.
 	
-abc_pred1(TableName,[Line|Lines],Index)->
+abc_pred1(SplitVals,TableName,[Line|Lines],Index)->
 	[Sequence,Classification] = Line,
 	ets:insert(TableName,{Index,Sequence,Classification}),
-	abc_pred1(TableName,Lines,Index+1);
-abc_pred1(TableName,[],Index)->
+	abc_pred1(SplitVals,TableName,Lines,Index+1);
+abc_pred1(SplitVals,TableName,[],Index)->
 	io:format("Stored to ETS table:~p Index reached:~p~n",[TableName,Index-1]).
 	
 %[$,||_<-lists:seq(1,784)]++[10].
@@ -348,21 +346,87 @@ chrom_HMM(TableName,Lines,Index)->
 			   {"Quies",25}].
 	
 %[9|| _<-lists:seq(1,14)]++[10]
-deep_gene(TableName,[Line|Lines],Index)->
-	[BasePairIndex|Vector]=Line,
-	ets:insert(TableName,{Index,Vector,BasePairIndex}),
-	deep_gene(TableName,Lines,Index+1);
-deep_gene(TableName,[],Index)->
-	IVL = 14,
-	Info = #info{
-		name=TableName,
-		ivl=IVL,
-		ovl=undefined,
-		trn_end=Index-1
-	},
-	ets:insert(TableName,{0,Info}),
-	io:format("Stored to ETS table:~p Index reached:~p~n",[TableName,Index-1]).
-	
+%data_extractor:start("o.txt",[9|| _<-lists:seq(1,14)]++[10],dg_full,deep_gene).
+deep_gene(SplitVals,TableName,IODevice,Index)->
+	case file:read_line(IODevice) of
+		{ok,List} ->
+			%List = binary_to_list(Data),
+			%io:format("List:~p~n",[List]),
+			[Line] = list_to_dvals(SplitVals,List,[]),
+			%io:format("Line:~p~n",[Line]),
+			io:format("Index:~p~n",[Index]),
+			[BasePairIndex|Vector]=Line,
+			%io:format("BasePairIndex:~p Vector:~p~n",[BasePairIndex,Vector]),
+			ets:insert(TableName,{Index,Vector,0}),
+			deep_gene(SplitVals,TableName,IODevice,Index+1);
+		_ ->
+%deep_gene(SplitVals,TableName,IODevice,Index)->
+			IVL = 14,
+			Info = #info{
+				name=TableName,
+				ivl=IVL,
+				ovl=undefined,
+				trn_end=Index-1
+			},
+			ets:insert(TableName,{0,Info}),
+			io:format("Stored to ETS table:~p Index reached:~p~n",[TableName,Index-1])
+	end.
+%data_extractor:start("o.txt",[9|| _<-lists:seq(1,14)]++[10],dg_full,deep_gene_full).
+deep_gene_full(SplitVals,TableName,IODevice,Index)->
+	deep_gene_full(SplitVals,TableName,IODevice,Index,[],[]).
+deep_gene_full(SplitVals,TableName,IODevice,Index,Acc,ResAcc)->
+	Resolution = 2,
+	case file:read_line(IODevice) of
+		{ok,List} ->
+			[Line] = list_to_dvals(SplitVals,List,[]),
+			%io:format("Line:~p~n",[Line]),
+			io:format("Index:~p~n",[Index]),
+			[BasePairIndex|Vector]=Line,
+			case lists:sum(Vector) == 0 of
+				true ->
+					deep_gene_full(SplitVals,TableName,IODevice,Index,[Vector|Acc],ResAcc);
+				false ->
+					%io:format("BasePairIndex:~p Vector:~p~n",[BasePairIndex,Vector]),
+					case length(Acc) > 200 of
+						true ->
+							%io:format("Throwing away:~p~n",[length(Acc)]),
+							%remove zero veectors,
+							%add the remaining vector to the ResAcc, do not increment Index
+							%ets:insert(TableName,{Index,Vector,0}),
+							deep_gene_full(SplitVals,TableName,IODevice,Index,[],[Vector|ResAcc]);
+						false ->
+							%Concatenate ResAcc with Acc in the right order
+							%Send it through the grinder, remainders goes to ResAcc
+							{Remainder,U_Index} = resolutionator(lists:reverse([Vector|Acc]++ResAcc),Resolution,TableName,Index),
+							deep_gene_full(SplitVals,TableName,IODevice,U_Index,[],Remainder)
+					end
+			end;
+		_ ->
+%deep_gene(SplitVals,TableName,IODevice,Index)->
+			IVL = 14,
+			Info = #info{
+				name=TableName,
+				ivl=IVL,
+				ovl=undefined,
+				trn_end=Index-1
+			},
+			ets:insert(TableName,{0,Info}),
+			io:format("Stored to ETS table:~p Index reached:~p~n",[TableName,Index-1])
+	end.
+
+	resolutionator(Vector,Resolution,TN,TargetIndex)->
+		case length(Vector) >= Resolution of
+			true ->
+				{Vs,Remainder} = lists:split(Resolution,Vector),
+				%io:format("Vs:~p~n",[Vs]),
+				ets:insert(TN,{TargetIndex,[math:log(Val+math:sqrt(Val*Val+1))||Val<-circuit:get_VecAvg(Vs)],0}),
+				resolutionator(Remainder,Resolution,TN,TargetIndex+1);
+			false ->
+				{lists:reverse(Vector),TargetIndex}
+		end.
+
+		%[ets:insert(TableName,{TargetIndex,V,0}) || {V,TargetIndex}<-lists:zip(lists:reverse([[math:log(Val+math:sqrt(Val*Val+1))||Val<-Vector]|Acc]),lists:seq(Index,Index+length([Vector|Acc])-1))],
+		
 	deep_gene_switch()->
 		{ok,TN}=ets:file2tab(chr22),
 		deep_gene_switch(TN,ets:first(TN),1),
@@ -589,7 +653,7 @@ create_CircuitTestFiles()->
 	I10O20 = ets:new(i10o20,[set,private,named_table]),
 	Trni10o20=[{Index,[random:uniform(2)-1||_<-lists:seq(1,10)],[random:uniform(2)-1||_<-lists:seq(1,20)]} || Index <- lists:seq(1,500)],
 	Vali10o20=[{Index+500,I,O}||{Index,I,O}<-lists:sublist(Trni10o20,100)],
-	Tsti10o20=[{Index+500,I,O}||{Index,I,O}<-lists:sublist(Vali10o20,100)],
+	Tsti10o20=[{Index+600,I,O}||{Index,I,O}<-lists:sublist(Vali10o20,100)],
 	[ets:insert(i10o20,{Index,I,O}) || {Index,I,O}<-Trni10o20++Vali10o20++Tsti10o20],
 	ets:insert(i10o20,{0,#info{
 		name=i10o20,
@@ -605,7 +669,7 @@ create_CircuitTestFiles()->
 	I50O20 = ets:new(i50o20,[set,private,named_table]),
 	Trni50o20=[{Index,[random:uniform(2)-1||_<-lists:seq(1,50)],[random:uniform(2)-1||_<-lists:seq(1,20)]} || Index <- lists:seq(1,500)],
 	Vali50o20=[{Index+500,I,O}||{Index,I,O}<-lists:sublist(Trni50o20,100)],
-	Tsti50o20=[{Index+500,I,O}||{Index,I,O}<-lists:sublist(Vali50o20,100)],
+	Tsti50o20=[{Index+600,I,O}||{Index,I,O}<-lists:sublist(Vali50o20,100)],
 	[ets:insert(i50o20,{Index,I,O}) || {Index,I,O}<-Trni50o20++Vali50o20++Tsti50o20],
 	ets:insert(i50o20,{0,#info{
 		name=i50o20,
@@ -621,7 +685,7 @@ create_CircuitTestFiles()->
 	I100O20 = ets:new(i100o20,[set,private,named_table]),
 	Trni100o20=[{Index,[random:uniform(2)-1||_<-lists:seq(1,100)],[random:uniform(2)-1||_<-lists:seq(1,20)]} || Index <- lists:seq(1,500)],
 	Vali100o20=[{Index+500,I,O}||{Index,I,O}<-lists:sublist(Trni100o20,100)],
-	Tsti100o20=[{Index+500,I,O}||{Index,I,O}<-lists:sublist(Vali100o20,100)],
+	Tsti100o20=[{Index+600,I,O}||{Index,I,O}<-lists:sublist(Vali100o20,100)],
 	[ets:insert(i100o20,{Index,I,O}) || {Index,I,O}<-Trni100o20++Vali100o20++Tsti100o20],
 	ets:insert(i100o20,{0,#info{
 		name=i100o20,
@@ -637,7 +701,7 @@ create_CircuitTestFiles()->
 	I100O50 = ets:new(i100o50,[set,private,named_table]),
 	Trni100o50=[{Index,[random:uniform()-0.5||_<-lists:seq(1,100)],[random:uniform()-0.5||_<-lists:seq(1,50)]} || Index <- lists:seq(1,500)],
 	Vali100o50=[{Index+500,I,O}||{Index,I,O}<-lists:sublist(Trni100o50,100)],
-	Tsti100o50=[{Index+500,I,O}||{Index,I,O}<-lists:sublist(Vali100o50,100)],
+	Tsti100o50=[{Index+600,I,O}||{Index,I,O}<-lists:sublist(Vali100o50,100)],
 	[ets:insert(i100o50,{Index,I,O}) || {Index,I,O}<-Trni100o50++Vali100o50++Tsti100o50],
 	ets:insert(i100o50,{0,#info{
 		name=i100o50,
@@ -653,7 +717,7 @@ create_CircuitTestFiles()->
 	I100O200 = ets:new(i100o200,[set,private,named_table]),
 	Trni100o200=[{Index,[random:uniform()-0.5||_<-lists:seq(1,100)],[random:uniform()-0.5||_<-lists:seq(1,200)]} || Index <- lists:seq(1,500)],
 	Vali100o200=[{Index+500,I,O}||{Index,I,O}<-lists:sublist(Trni100o200,100)],
-	Tsti100o200=[{Index+500,I,O}||{Index,I,O}<-lists:sublist(Vali100o200,100)],
+	Tsti100o200=[{Index+600,I,O}||{Index,I,O}<-lists:sublist(Vali100o200,100)],
 	[ets:insert(i100o200,{Index,I,O}) || {Index,I,O}<-Trni100o200++Vali100o200++Tsti100o200],
 	ets:insert(i100o200,{0,#info{
 		name=i100o200,
@@ -701,3 +765,22 @@ create_CircuitTestFiles()->
 	}}),
 	ets:tab2file(xor_bip,xor_bip),
 	ets:delete(xor_bip).
+	
+create_CompetitiveTestFiles()->
+	%i10o20: IVL=10,OVL=20,
+	TableName = i2o0C,
+	I10O20C = ets:new(TableName,[set,private,named_table]),
+	Trni10o20=[{Index,[random:uniform()*5 - 5, (random:uniform()-0.5)*2],[]} || Index <- lists:seq(1,250)]++[{Index,[random:uniform()*5+5,(random:uniform()-0.5)*2],[]} || Index <- lists:seq(251,500)],
+	Vali10o20=[{Index+500,I,O}||{Index,I,O}<-lists:sublist(Trni10o20,100)],
+	Tsti10o20=[{Index+600,I,O}||{Index,I,O}<-lists:sublist(Vali10o20,100)],
+	[ets:insert(I10O20C,{Index,I,O}) || {Index,I,O}<-Trni10o20++Vali10o20++Tsti10o20],
+	ets:insert(I10O20C,{0,#info{
+		name=TableName,
+		ivl=2,
+		ovl=undefined,
+		trn_end=500,
+		val_end=600,
+		tst_end=700
+	}}),
+	ets:tab2file(TableName,TableName),
+	ets:delete(TableName).

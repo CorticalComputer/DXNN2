@@ -51,7 +51,7 @@
 	init_specie_size = 10,
 	polis_id = mathema,
 	generation_limit = 100,
-	evaluations_limit = 100000,
+	evaluations_limit = 20000,
 	fitness_goal = inf,
 	benchmarker_pid,
 	committee_pid,
@@ -232,16 +232,16 @@ handle_cast({Agent_Id,terminated,Fitness},State) when State#state.evolutionary_a
 	F = fun()->
 		%io:format("Tot Evaluations:~p~n",[State#state.tot_evaluations]),
 		io:format("Agent: ~p terminated.~n",[Agent_Id]),
-		[A] = mnesia:read({agent,Agent_Id}),
+		A = genotype:read({agent,Agent_Id}),
 		Specie_Id = A#agent.specie_id,
-		[S] = mnesia:read({specie,Specie_Id}),
+		S = genotype:read({specie,Specie_Id}),
 		U_ActiveAgent_Ids = S#specie.agent_ids -- [Agent_Id],
 		Distinguishers = S#specie.hof_distinguishers,
 		SHOF = S#specie.hall_of_fame,
 		{U_SHOF,Losers}=update_SHOF(SHOF,[Agent_Id],Distinguishers,[]),
 		io:format("SHOF:~p~nU_SHOF:~p~n",[SHOF,U_SHOF]),
 		U_S = S#specie{hall_of_fame=U_SHOF,agent_ids=U_ActiveAgent_Ids},
-		mnesia:write(U_S),
+		genotype:write(U_S),
 		U_S
 	end,
 	{atomic,U_S}=mnesia:transaction(F),
@@ -258,8 +258,8 @@ handle_cast({Agent_Id,terminated,Fitness},State) when State#state.evolutionary_a
 				FitnessScaled=[{Champ#champion.main_fitness/math:pow(Champ#champion.tot_n,?EFF),Champ#champion.id}||Champ<-U_SHOF],
 				TotFitness = lists:sum([Main_Fitness || {Main_Fitness,_Id}<-FitnessScaled]),
 				[Offspring_Id]=selection_algorithm:choose_Winners(Specie_Id,FitnessScaled,TotFitness,[],[],1),
-				[U2_S] = mnesia:read({specie,Specie_Id}),
-				mnesia:write(U2_S#specie{agent_ids=[Offspring_Id|U2_S#specie.agent_ids]}),
+				U2_S = genotype:read({specie,Specie_Id}),
+				genotype:write(U2_S#specie{agent_ids=[Offspring_Id|U2_S#specie.agent_ids]}),
 				Offspring_Id
 			end,
 			{atomic,Offspring_Id}=mnesia:transaction(F2),
@@ -518,6 +518,7 @@ init_population(Init_State,Specie_Constraints)->
 				fingerprint = Fingerprint,
 				constraint = SpeCon,
 				agent_ids = IdAcc,
+				all_agent_ids = IdAcc,
 				seed_agent_ids = IdAcc
 			},
 			genotype:write(Specie),
@@ -542,20 +543,20 @@ continue(Population_Id)->
 %%%Function: 
 %%%Interface:Input:() Output:
 %%%MsgComunication: N/A
-intrapopulation_selection(Population_Id,KeepTot,Fitness_Postprocessor,Selection_Algorithm)->%,SelectionType)->%
+intrapopulation_selection(Population_Id,Specie_Size_Limit,Fitness_Postprocessor,Selection_Algorithm)->%,SelectionType)->%
 	%NeuralEnergyCost = calculate_EnergyCost(Population_Id),
 	F = fun()->
-		[P] = mnesia:read({population,Population_Id}),
+		P = genotype:read({population,Population_Id}),
 		%Distinguishers = P#population.distinguishers,
 		%Objectives = P#population.objectives,
 		Specie_Ids = P#population.specie_ids,
 		%update_HallOfFame_Population(Population_Id),
 		%[intraspecie_selection(Specie_Id,SelectionType) || Specie_Id <- Specie_Ids]
-		[intraspecie_selection(Specie_Id,KeepTot,Fitness_Postprocessor,Selection_Algorithm) || Specie_Id <- Specie_Ids]
+		[intraspecie_selection(Specie_Id,Specie_Size_Limit,Fitness_Postprocessor,Selection_Algorithm) || Specie_Id <- Specie_Ids]
 	end,
 	{atomic,_} = mnesia:transaction(F).
 
-	intraspecie_selection(Specie_Id,KeepTot,Fitness_Postprocessor,Selection_Algorithm_Name)->
+	intraspecie_selection(Specie_Id,Specie_Size_Limit,Fitness_Postprocessor,Selection_Algorithm_Name)->
 		S = genotype:dirty_read({specie,Specie_Id}),
 		%Objectives = S#specie.objectives,
 		Distinguishers = S#specie.hof_distinguishers,
@@ -576,11 +577,11 @@ intrapopulation_selection(Population_Id,KeepTot,Fitness_Postprocessor,Selection_
 			fitness = {AvgFitness,Std,MaxFitness,MinFitness},
 			innovation_factor = U_InnovationFactor
 		},
-		mnesia:write(U_S),
+		genotype:write(U_S),
 		%io:format("Before seletion algorithm~n"),
 		NewGen_SpecieAgents=case ?INTERACTIVE_SELECTION of
 			false ->
-				selection_algorithm:Selection_Algorithm_Name(Specie_Id,Losers);
+				selection_algorithm:Selection_Algorithm_Name(Specie_Id,Losers,Specie_Size_Limit);
 			true ->%io:format("U_SHOF:~p~n",[U_SHOF]),
 				interactive_evolution:select(Specie_Id,Losers)
 		end,
@@ -605,7 +606,7 @@ intrapopulation_selection(Population_Id,KeepTot,Fitness_Postprocessor,Selection_
 						[] ->%Champion with such fingerprint does not exist, thus it is entered, as a stepping stone, into the HOF
 							A = genotype:read({agent,Agent#champion.id}),
 							U_A = A#agent{champion_flag=[true|A#agent.champion_flag]},
-							mnesia:write(U_A),
+							genotype:write(U_A),
 							%retrograde_update(A#agent.parent_ids,A#agent.main_fitness,A#agent.fitness,0),
 							update_FitnessStagnation(Agent#champion.id,better,?FS),
 							{[Agent|SHOF],undefined};
@@ -613,21 +614,9 @@ intrapopulation_selection(Population_Id,KeepTot,Fitness_Postprocessor,Selection_
 							SHOF_Remainder = SHOF -- Champs,
 							case fitness_domination(Agent,Champs) of
 								false ->
-									case on_pareto_front(Agent,Champs) of
-										false ->
-											case novel_behavior(Agent,Champs) of
-												false ->
-													%io:format("Agent not added:~p~n",[{Agent}]),
-													update_FitnessStagnation(Agent#champion.id,worse,?FS),
-													{SHOF,Agent};
-												U_Champs ->
-													update_FitnessStagnation(Agent#champion.id,better,?FS),
-													{SHOF_Remainder++U_Champs,undefined}
-											end;
-										U_Champs ->
-											update_FitnessStagnation(Agent#champion.id,better,?FS),
-											{SHOF_Remainder++U_Champs,undefined}
-									end;
+									%io:format("Agent not added:~p~n",[{Agent}]),
+									update_FitnessStagnation(Agent#champion.id,worse,?FS),
+									{SHOF,Agent};
 								U_Champs ->
 									update_FitnessStagnation(Agent#champion.id,better,?FS),
 									{SHOF_Remainder++U_Champs,undefined}
@@ -637,64 +626,79 @@ intrapopulation_selection(Population_Id,KeepTot,Fitness_Postprocessor,Selection_
 					update_FitnessStagnation(_,_,false)->
 						ok;
 					update_FitnessStagnation(Id,worse,true)->
-						[A] = mnesia:read({agent,Id}),
+						A = genotype:read({agent,Id}),
 						case A#agent.parent_ids of
 							[AncestorId] ->
-								[Ancestor] = mnesia:read({agent,AncestorId}),
+								Ancestor = genotype:read({agent,AncestorId}),
 								FS = Ancestor#agent.fs,
 								io:format("FS worse:~p~n",[{FS,AncestorId}]),
-								mnesia:write(Ancestor#agent{fs=FS - FS*0.1});
+								genotype:write(Ancestor#agent{fs=FS - FS*0.1});
 							[] ->
 								ok
 						end;
 					update_FitnessStagnation(Id,better,true)->
-						[A] = mnesia:read({agent,Id}),
+						A = genotype:read({agent,Id}),
 						case A#agent.parent_ids of
 							[AncestorId] ->
-								[Ancestor] = mnesia:read({agent,AncestorId}),
+								Ancestor = genotype:read({agent,AncestorId}),
 								FS = Ancestor#agent.fs,
 								io:format("FS better:~p~n",[{FS,AncestorId}]),
-								mnesia:write(Ancestor#agent{fs=FS + (1-FS)*0.1});
+								genotype:write(Ancestor#agent{fs=FS + (1-FS)*0.1});
 							[] ->
 								ok
 						end.
 			
 					fitness_domination(Agent,SHOF)->
 						case fitness_domination(Agent,SHOF,[],[]) of
-							{[],_} ->
+							dominated ->
 								%io:format("NOT ADDING, fitness_domination:~p~n",[{Agent}]),
 								false;
-							{LoserAcc,RemainingChamps}->
-								%io:format("ADDING, fitness_domination:~p~n",[{Agent}]),
-								[A] = mnesia:read({agent,Agent#champion.id}),
+							{on_pareto,RemainingChamps}->%On Pareto
+								A = genotype:read({agent,Agent#champion.id}),
 								U_A = A#agent{champion_flag=[true|A#agent.champion_flag]},
-								mnesia:write(U_A),
+								genotype:write(U_A),
+								[Agent|RemainingChamps];
+							dominating->
+								A = genotype:read({agent,Agent#champion.id}),
+								U_A = A#agent{champion_flag=[true|A#agent.champion_flag]},
+								genotype:write(U_A),
+								[Agent];
+							{strange,LoserAcc,RemainingChamps}->
+								io:format("******** ALGORITHMIC ERROR:: fitness_domination!~n"),
+								%io:format("ADDING, fitness_domination:~p~n",[{Agent}]),
+								A = genotype:read({agent,Agent#champion.id}),
+								U_A = A#agent{champion_flag=[true|A#agent.champion_flag]},
+								genotype:write(U_A),
 								[Agent|RemainingChamps]
 						end.
 						
 						fitness_domination(Agent,[Champ|Champs],LoserAcc,Acc)->
 							case Agent#champion.hof_fingerprint == Champ#champion.hof_fingerprint of
 								true ->
-									case benchmarker:vector_gt(Agent#champion.fitness,Champ#champion.fitness) of %is agent dominating any of the current champs, if so remove it.
-										true ->
-											%We should still keep it though, if it's within some range of the dominating agent, and the system does not use genetic exploration.
-											case (Champ#champion.main_fitness > Agent#champion.main_fitness*?MIN_ACCEPTABLE_FITNESS_RATIO) of
-												true ->
-													fitness_domination(Agent,Champs,LoserAcc,[Champ|Acc]);
-												false ->
-													[ChampA] = mnesia:read({agent,Champ#champion.id}),
-													U_ChampA = ChampA#agent{champion_flag=[lost|ChampA#agent.champion_flag]},%true, false, lost, rentered
-													mnesia:write(U_ChampA),
-													fitness_domination(Agent,Champs,[Champ|LoserAcc],Acc)
-											end;
-										false ->
-											{[],void}
+									VecDif=exoself:vec1_dominates_vec2(Agent#champion.fitness,Champ#champion.fitness,0,[]),
+									%io:format("VecDif:~p~n",[VecDif]),
+									TotDomElems=length([Val || Val<-VecDif, Val > 0]),
+									TotElems=length(VecDif),
+									case TotDomElems of
+										TotElems ->%Dominating, could potentially check for behavioral difference here
+											ChampA = genotype:read({agent,Champ#champion.id}),
+											U_ChampA = ChampA#agent{champion_flag=[lost|ChampA#agent.champion_flag]},%true, false, lost, rentered
+											genotype:write(U_ChampA),
+											fitness_domination(Agent,Champs,[Champ|LoserAcc],Acc);
+										0 ->%Dominated
+											dominated;
+										_ ->%On Pareto
+											fitness_domination(Agent,Champs,LoserAcc,[Champ|Acc])
 									end;
 								false ->
 									fitness_domination(Agent,Champs,LoserAcc,[Champ|Acc])
 							end;
+						fitness_domination(_Agent,[],LoserAcc,[])->
+							dominating;
+						fitness_domination(_Agent,[],[],Acc)->
+							{on_pareto,Acc};
 						fitness_domination(_Agent,[],LoserAcc,Acc)->
-							{LoserAcc,Acc}.
+							{strange,LoserAcc,Acc}.
 					
 					on_pareto_front(Agent,SHOF)->
 						case opf(Agent,SHOF) of
@@ -703,18 +707,21 @@ intrapopulation_selection(Population_Id,KeepTot,Fitness_Postprocessor,Selection_
 								false;
 							true ->
 								%io:format("ADDING, on_pareto_front:~p~n",[{Agent}]),
-								[A] = mnesia:read({agent,Agent#champion.id}),
+								A = genotype:read({agent,Agent#champion.id}),
 								U_A = A#agent{champion_flag=[true|A#agent.champion_flag]},
-								mnesia:write(U_A),
+								genotype:write(U_A),
 								[Agent|SHOF]
 						end.
 							
 						opf(Agent,[Champ|Champs])->
-							case benchmarker:vector_gt(Champ#champion.fitness,Agent#champion.fitness) of %Are any of the current champs dominating the agent? if no, then it is on pareto front.
-								false ->
-									opf(Agent,Champs);
-								true ->
-									false
+							VecDif=exoself:vec1_dominates_vec2(Agent#champion.fitness,Champ#champion.fitness,0,[]),
+							%io:format("VecDif:~p~n",[VecDif]),
+							DifElems=length([Val || Val<-VecDif, Val > 0]),
+							case DifElems of
+								0 ->%Complete Inferiority
+									false;
+								_ ->%Variation, pareto front TODO
+									opf(Agent,Champs)
 							end;
 						opf(_Agent,[])->
 							true.
@@ -730,15 +737,14 @@ intrapopulation_selection(Population_Id,KeepTot,Fitness_Postprocessor,Selection_
 						MainFitness_List = [C#champion.main_fitness || C<-SHOF],
 						SHOF_AvgFitness = functions:avg(MainFitness_List),
 						SHOF_STD = functions:std(MainFitness_List,SHOF_AvgFitness,[]),
-						%Minimal_Novelty = 2,
 						Minimal_Fitness = SHOF_AvgFitness-0.1*abs(SHOF_AvgFitness),
 						case (lists:min(Agent#champion.behavioral_differences) > Minimal_Novelty) and (Agent#champion.main_fitness > Minimal_Fitness) of
 							true ->
 								%io:format("ADDING, and the min different is:~p~n",[{lists:min(Agent#champion.behavioral_differences),Minimal_Novelty,Agent#champion.behavioral_differences}]),
 								put(minimal_novelty,Minimal_Novelty+Minimal_Novelty*0.5+0.05),
-								[A] = mnesia:read({agent,Agent#champion.id}),
+								A = genotype:read({agent,Agent#champion.id}),
 								U_A = A#agent{champion_flag=[true|A#agent.champion_flag]},
-								mnesia:write(U_A),
+								genotype:write(U_A),
 								[Agent|SHOF];
 							false ->
 								%io:format("NOT Adding, and the min different is:~p~n",[{lists:min(Agent#champion.behavioral_differences),Minimal_Novelty,Agent#champion.behavioral_differences}]),
@@ -747,7 +753,7 @@ intrapopulation_selection(Population_Id,KeepTot,Fitness_Postprocessor,Selection_
 						end.
 					
 					to_champion_form(SHOF,Agent_Id,Distinguishers)->
-						[A]=mnesia:read({agent,Agent_Id}),
+						A=genotype:read({agent,Agent_Id}),
 						Behavioral_Differences=case ?BEHAVIORAL_TRACE of
 							true ->%io:format("behavioral trace:~p~n",[A#agent.behavioral_trace]),
 								case phenotypic_diversity:compare_behavior(SHOF,A#agent.behavioral_trace) of
@@ -783,7 +789,7 @@ intrapopulation_selection(Population_Id,KeepTot,Fitness_Postprocessor,Selection_
 				retrograde_update(_AncestorIds,_Main_Fitness,_Fitness,10)->
 					ok;
 				retrograde_update([AncestorId|AncestorIds],Main_Fitness,Fitness,DepthIndex)->
-					[A] = mnesia:read({agent,AncestorId}),
+					A = genotype:read({agent,AncestorId}),
 					Ancestor_MainFitness = A#agent.main_fitness,
 					Evolvability = A#agent.evolvability,
 					Robustness = A#agent.robustness,
@@ -813,13 +819,13 @@ intrapopulation_selection(Population_Id,KeepTot,Fitness_Postprocessor,Selection_
 						robustness = U_Robustness,
 						brittleness = U_Brittleness
 					},
-					mnesia:write(U_A),
+					genotype:write(U_A),
 					retrograde_update(A#agent.parent_ids,Main_Fitness,Fitness,DepthIndex+1);
 				retrograde_update([],_Main_Fitness,_Fitness,_Depth_Index)->
 					ok.
 	
 				retrograde_update(AncestorId,Main_Fitness,Fitness)->
-					[A] = mnesia:read({agent,AncestorId}),
+					A = genotype:read({agent,AncestorId}),
 					Ancestor_MainFitness = A#agent.main_fitness,
 					Evolvability = A#agent.evolvability,
 					Robustness = A#agent.robustness,
@@ -849,12 +855,12 @@ intrapopulation_selection(Population_Id,KeepTot,Fitness_Postprocessor,Selection_
 						robustness = U_Robustness,
 						brittleness = U_Brittleness
 					},
-					mnesia:write(U_A).
+					genotype:write(U_A).
 	
 		evolvability_research(Specie_Id,Specie_Size_Limit)->
-			[S] = mnesia:read({specie,Specie_Id}),
+			S = genotype:read({specie,Specie_Id}),
 			%io:format("S:~p~n",[S]),
-			mnesia:write(S#specie{agent_ids=[]}),
+			genotype:write(S#specie{agent_ids=[]}),
 			Distinguishers = S#specie.hof_distinguishers,
 			Agent_Ids = get_SpecieAgentIds(Specie_Id),
 			Champions=[to_champion_form(S#specie.hall_of_fame,Agent_Id,Distinguishers) || Agent_Id <-Agent_Ids],
@@ -862,38 +868,48 @@ intrapopulation_selection(Population_Id,KeepTot,Fitness_Postprocessor,Selection_
 			TotFitness = lists:sum([Fitness || {Fitness,_Id}<-FitnessScaled]),
 			NewGen_Ids=selection_algorithm:choose_Winners(Specie_Id,FitnessScaled,TotFitness,[],[],Specie_Size_Limit),
 			%io:format("NewGen_Ids:~p~n",[NewGen_Ids]),
-			mnesia:write(S#specie{agent_ids=NewGen_Ids}),
+			genotype:write(S#specie{agent_ids=NewGen_Ids}),
 			NewGen_Ids.
 			
 			get_SpecieAgentIds(Specie_Id)->
-				[S] = mnesia:dirty_read({specie,Specie_Id}),
+				S = genotype:dirty_read({specie,Specie_Id}),
 				%io:format("****Specie_Id:~p****~n",[Specie_Id]),
 				lists:append(S#specie.seed_agent_ids,[get_GeneticLineIds(Agent_Id,1)||Agent_Id<-S#specie.seed_agent_ids]).
 		
 				get_GeneticLineIds(Agent_Id,Generation)->
-					[A] = mnesia:dirty_read({agent,Agent_Id}),
+					A = genotype:dirty_read({agent,Agent_Id}),
 					%io:format("Generation:~p Agent Id:~p~n",[Generation,Agent_Id]),
 					lists:append(A#agent.offspring_ids,[get_GeneticLineIds(Id,Generation+1) || Id <- A#agent.offspring_ids]).
 
 delete_population(Population_Id)->
-	[P] = mnesia:read({population,Population_Id}),
+	P = genotype:read({population,Population_Id}),
 	Specie_Ids = P#population.specie_ids,
-	io:format("delete_population::specie_ids:~p~n",[Specie_Ids]),
+	io:format("delete_population ~p ::specie_ids:~p~n",[Population_Id,Specie_Ids]),
 	[delete_specie(Specie_Id) || Specie_Id <- Specie_Ids],
-	mnesia:delete({population,Population_Id}).
+	genotype:delete({population,Population_Id}).
 	
 	delete_specie(Specie_Id)->
-		[S] = mnesia:read({specie,Specie_Id}),
+		S = genotype:read({specie,Specie_Id}),
 		%Every agent is an offspring of someone in the seed population
 		%because there is only a single parent to an agent, starting from seed agents, it is possible to delete everyone, if we delete all offspring
 		Seed_Agent_Ids = S#specie.seed_agent_ids,
+		All_Agent_Ids = S#specie.all_agent_ids,
 		io:format("delete_specie::seed_agent_ids:~p~n",[Seed_Agent_Ids]),
-		[delete_genetic_line(Agent_Id) || Agent_Id <- Seed_Agent_Ids],
-		mnesia:delete({specie,Specie_Id}).
+		io:format("delete_specie::agent_ids:~p~n",[All_Agent_Ids]),
+		delete_Agents(All_Agent_Ids),
+		%[genotype:delete_Agent(Agent_Id) || Agent_Id <- All_Agent_Ids],
+%		[delete_genetic_line(Agent_Id) || Agent_Id <- Seed_Agent_Ids],
+		genotype:delete({specie,Specie_Id}).
+		
+		delete_Agents([Agent_Id|Agent_Ids])->
+			genotype:delete_Agent(Agent_Id),
+			delete_Agents(Agent_Ids);
+		delete_Agents([])->
+			ok.
 		
 		delete_genetic_line(Agent_Id)->
 			io:format("delete_genetic_line(~p)~n",[Agent_Id]),
-			[A] = mnesia:read({agent,Agent_Id}),
+			A = genotype:read({agent,Agent_Id}),
 			genotype:delete_Agent(A#agent.id),
 			Offspring_Ids = A#agent.offspring_ids,
 			io:format("Offspring Ids:~p~n",[Offspring_Ids]),
@@ -987,7 +1003,7 @@ gather_STATS(Population_Id,EvaluationsAcc,OpMode)->
 			tot_evaluations=U_TotEvaluations
 		},
 		io:format("Population Trace:~p~n",[U_Trace]),
-		mnesia:write(P#population{trace=U_Trace})
+		genotype:write(P#population{trace=U_Trace})
 	end,
 	Result=mnesia:transaction(F),
 	io:format("Result:~p~n",[Result]).
@@ -1017,16 +1033,16 @@ gather_STATS(Population_Id,EvaluationsAcc,OpMode)->
 		},
 		STATS = S#specie.stats,
 		U_STATS = [STAT|STATS],
-		mnesia:dirty_write(S#specie{stats=U_STATS}),
+		genotype:dirty_write(S#specie{stats=U_STATS}),
 		STAT.
 
 		validation_testing(Specie_Id,OpModes)->%Perhaps test all agents in the SHOF
 			case lists:member(validation,OpModes) of
 				true ->
-					[S] = mnesia:read({specie,Specie_Id}),
+					S = genotype:read({specie,Specie_Id}),
 					SHOF = S#specie.hall_of_fame,
 					U_SHOF=champion_ValTest(SHOF,[]),
-					mnesia:write(S#specie{hall_of_fame=U_SHOF}),
+					genotype:write(S#specie{hall_of_fame=U_SHOF}),
 					SortedChampions=lists:reverse(lists:sort([{C#champion.main_fitness,C#champion.id} || C <- U_SHOF])),
 					io:format("Sorted champions:~p~n",[SortedChampions]),
 					case SortedChampions of

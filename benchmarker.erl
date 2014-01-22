@@ -41,10 +41,28 @@
 %		],
 %		neural_afs = [{circuit,#layer{neurode_type=tanh,tot_neurodes=1,type=standard}}],
 %		neural_afs = [{circuit,#layer{neurode_type=tanh,tot_neurodes=10,dynamics=dynamic,type=dae}}],
-		tuning_selection_fs=[dynamic_random]
+		tuning_selection_fs=[dynamic_random],
+		mutation_operators= [
+			%{mutate_weights,10000},
+			{add_bias,10}, 
+			%{remove_bias,1}, 
+	%		{mutate_af,1}, 
+			{add_outlink,40}, 
+			{add_inlink,40}, 
+			{add_neuron,40}, 
+			{outsplice,40},
+			%{insplice,40},
+			{add_sensorlink,1},
+			%{add_actuatorlink,1},
+			{add_sensor,1}, 
+			{add_actuator,1},
+	%		{mutate_plasticity_parameters,1},
+			{add_cpp,1},
+			{add_cep,1}
+		]
 	} 
 	|| 
-		Morphology<-[llvm_phase_ordering],
+		Morphology<-[xorAndXor],
 		CA<-[recurrent]
 	
 ]).
@@ -75,8 +93,8 @@ start(Id,Notes)->
 		specie_size_limit=10,
 		init_specie_size=10,
 		polis_id = mathema,
-		generation_limit = 1000,
-		evaluations_limit = 50000,
+		generation_limit = 10000,
+		evaluations_limit = 100000,
 		fitness_goal = inf
 	},
 	E=#experiment{
@@ -86,7 +104,7 @@ start(Id,Notes)->
 		init_constraints=?INIT_CONSTRAINTS,
 		progress_flag=in_progress,
 		run_index=1,
-		tot_runs=10,
+		tot_runs=100,
 		started={date(),time()},
 		interruptions=[]
 	},
@@ -209,16 +227,29 @@ loop(E,P_Id)->
 	
 
 report(Experiment_Id,FileName)->
+	report(Experiment_Id,FileName,undefind).
+report(Experiment_Id,FileName,EvalLimit)->
 	E = genotype:dirty_read({experiment,Experiment_Id}),
+	
+	{ok, EFile} = file:open(?DIR++FileName++"_Experiment", write),
+	io:format(EFile, "~p",[E]),
+	file:close(EFile),
+	io:format("******** Experiment written to file:~p~n",[?DIR++FileName++"_Experiment"]),
+	
 	Traces = E#experiment.trace_acc,
 	{ok, File} = file:open(?DIR++FileName++"_Trace_Acc", write),
+	Evaluations_Stats = get_evaluations(Experiment_Id,undefined,EvalLimit),
+	io:format(File,"REPORT:~p~n",[Evaluations_Stats]),
 	lists:foreach(fun(X) -> io:format(File, "~p.~n",[X]) end, Traces),
 	file:close(File),
 	io:format("******** Traces_Acc written to file:~p~n",[?DIR++FileName++"_Trace_Acc"]),
+	
 	Graphs = prepare_Graphs(Traces),
 	write_Graphs(Graphs,FileName++"_Graphs"),
 	Eval_List = [T#trace.tot_evaluations||T<-Traces],
-	io:format("Tot Evaluations Avg:~p Std:~p~n",[functions:avg(Eval_List),functions:std(Eval_List)]).
+	io:format("Tot Evaluations Avg:~p Std:~p~n",[functions:avg(Eval_List),functions:std(Eval_List)]),
+	Evaluations_Stats,
+	get_evaluations(Experiment_Id,undefined,EvalLimit).
 
 -record(graph,{morphology,avg_neurons=[],neurons_std=[],avg_fitness=[],fitness_std=[],max_fitness=[],min_fitness=[],maxavg_fitness=[],maxavg_fitness_std=[],minavg_fitness=[],avg_diversity=[],diversity_std=[],evaluations=[],validation_fitness=[],validation_fitness_std=[],validationmax_fitness=[],validationmin_fitness=[],evaluation_Index=[]}).
 -record(avg,{avg_neurons=[],neurons_std=[],avg_fitness=[],fitness_std=[],max_fitness=[],min_fitness=[],maxavg_fitness,maxavg_fitness_std=[],minavg_fitness,avg_diversity=[],diversity_std=[],evaluations=[],validation_fitness=[],validation_fitness_std=[],validationmax_fitness=[],validationmin_fitness=[]}).
@@ -456,7 +487,7 @@ trace2graph(TraceFileName)->
 	{ok,Traces} = file:consult(TraceFileName),
 	io:format("Traces:~p~n",[Traces]),
 	Graphs = prepare_Graphs(Traces),
-	write_Graphs(Graphs,TraceFileName++"_Graph").
+	write_Graphs(Graphs,"__Graph").
 	
 get_evaluations(E_Id)->
 	get_evaluations(E_Id,undefined,undefined).
@@ -478,7 +509,7 @@ get_evaluations(E_Id,FitnessGoal,EvalLimit)->
 			functions:avg(SuccessAcc)
 	end,
 	Std = functions:std(SuccessAcc,Avg,[]),
-	io:format("Sucess rate:{~p/~p,~p%} Avg:~p Std:~p~n",[TotSuccess,TotEvoRuns,SuccessRate*100,Avg,Std]).
+	io:format("Success Rate:{~p/~p,~p%} Avg:~p Std:~p~n",[TotSuccess,TotEvoRuns,SuccessRate*100,Avg,Std]).
 		
 		analyze_stats([[S]|Stats],FitnessGoal,EvalLimit,Acc)->
 			io:format("S:~p~n",[S]),
@@ -486,7 +517,7 @@ get_evaluations(E_Id,FitnessGoal,EvalLimit)->
 			case S#stat.max_fitness of
 				[] ->	
 					analyze_stats(Stats,FitnessGoal,EvalLimit,U_Acc);
-				[MaxFitness]->	
+				[MaxFitness|_]->	
 					case MaxFitness >= FitnessGoal of
 						true ->
 							U_Acc;

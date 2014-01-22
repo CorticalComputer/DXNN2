@@ -84,14 +84,32 @@ start(Exoself_PId)->
 	
 loop(Exoself_PId)->
 	receive
-		{From,get_percept,get_BitCodeStatistics,[OpMode,Benchmark]}->
-			Percept = scape_LLVMPhaseOrdering:Benchmark(Exoself_PId,sense),
+		{From,get_percept,get_BitCodeStatistics,[OpMode,ProgramName]}->
+			Percept = try scape_LLVMPhaseOrdering:ProgramName(Exoself_PId,sense) of
+				Result ->
+					Result
+				catch
+					Error:Reason ->
+						io:format("PERCEPT Error:~p Reason:~p~n",[Error,Reason]),
+						io:format("Backtrace:~p~n",[erlang:get_stacktrace()]),
+						io:format("Data:~p~n",[{From,get_percept,get_BitCodeStatistics,[OpMode,ProgramName]}]),
+						exit("CRASHED~n")
+			end,
 			%io:format("Percept:~p~n",[{Percept,length(Percept)}]),
 			From ! {self(),percept,Percept},
 			?MODULE:loop(Exoself_PId);
 		{From,act,choose_OptimizationPhase,[OpMode,ProgramName],Output}->
 			Optimization = find_optimization(Output),
-			{Fitness,HaltFlag} = ?MODULE:ProgramName(Exoself_PId,{act,Optimization}),
+			{Fitness,HaltFlag} = try scape_LLVMPhaseOrdering:ProgramName(Exoself_PId,{act,Optimization}) of
+				Result -> 
+					Result
+				catch
+					Error:Reason ->
+						io:format("ACT Error:~p Reason:~p~n",[Error,Reason]),
+						io:format("Backtrace:~p~n",[erlang:get_stacktrace()]),
+						io:format("Data:~p~n",[{From,get_percept,get_BitCodeStatistics,[OpMode,ProgramName]}]),
+						exit("CRASHED~n")
+			end,
 			From ! {self(),Fitness,HaltFlag},
 			case OpMode of
 				test ->
@@ -246,7 +264,7 @@ parser(Exoself_PId,{act,done})->
 	Result4=[file:delete(FN++".s") || FN <- All_Files],
 	c:cd("llvm_Data/parser/parser"),
 	StartTime = now(),
-	_ = os:cmd("./parser"++Unique_Extension++" 2.1.dict -batch"),
+	Result = os:cmd("time ./parser"++Unique_Extension++" 2.1.dict -batch"),
 	EndTime = now(),
 	%io:format("~p~n",[data_extractor:list_to_dvals([$:,$:],Result,[])]),
 	file:delete("llvm_Data/"++FunctionName++"/"++FunctionName++"/"++FunctionName++Unique_Extension),
@@ -309,10 +327,21 @@ bzip2(Exoself_PId,{act,done})->
 	%Result = os:cmd("llvm_Data/bzip2/bzip2/src/bzip2"++Unique_Extension++" llvm_Data/bzip2/bzip2/input.random 2 2>&1 | tee llvm_Data/bzip2/bzip2/bzipB"),
 	%clang -o ExedcutableFileNameIWant ALL_BCs -lm
 	EndTime = now(),%
-	[[User,_,System,_,Wall],_]=data_extractor:list_to_dvals([$u,32, $s, $:, $e],Result,[]),%[58,32,32,$s,58,$e]
+	
+	RunTime = case time_dif(StartTime,EndTime) < 0.10 of
+		true ->
+			io:format("Result:~p~n~n~n~p~n~n~n~p~n~n~n~p~n~n~n~p~n",[Result1,Result2,Result3,Result4,Result]),
+			10;
+		false ->
+			%[[_,_,_,User,_,Sys],_]=data_extractor:list_to_dvals([58,32,32,$s,58,$e],Result,[]),
+			[[User,_,System,_,Wall],_]=data_extractor:list_to_dvals([$u,32, $s, $:, $e],Result,[]),%[58,32,32,$s,58,$e]
+			AltRunTime=User+Sys
+			%time_dif(StartTime,EndTime)
+	end,
+	
 	file:delete("llvm_Data/"++FunctionName++"/"++FunctionName++"/src/"++FunctionName++Unique_Extension),
-	RunTime = time_dif(StartTime,EndTime),
-	io:format("What:~p~n",[{Result,User+System}]),
+%	RunTime = time_dif(StartTime,EndTime),
+	io:format("What:~p~n",[{Result,RunTime}]),
 	%io:format("Result:~p User:~p Sys:~p~n",[Result,User,Sys]),
 	%AltRunTime=User+Sys,
 	erase(Exoself_PId),
@@ -325,8 +354,8 @@ bzip2(Exoself_PId,{act,Optimization})->
 			bzip2(Exoself_PId,{act,done});
 		{[FileName],All_Files,PhaseIndex,Unique_Extension}->
 			put(Exoself_PId,{All_Files,All_Files,PhaseIndex+1,Unique_Extension}),
-			Result = os:cmd("opt-3.4 -"++Optimization++" -verify-each -o "++FileName++".bc"++" "++FileName++".bc"),
-%			io:format("Result:~p~n",[Result]),
+			Result = os:cmd("opt-3.4 -"++Optimization++" -o "++FileName++".bc"++" "++FileName++".bc"),
+			%io:format("Result:~p~n",[Result]),
 			{[0],0};
 		{[FileName|Remaining_File_Names],All_Files,PhaseIndex,Unique_Extension}->
 			put(Exoself_PId,{Remaining_File_Names,All_Files,PhaseIndex,Unique_Extension}),
@@ -343,7 +372,80 @@ get_FileFeatures(FileName)->
 	Tockenized_List = data_extractor:list_to_dvals(SplitVals,List,[]),
 	FeatureVector = [math:log(Val+math:sqrt(Val*Val+1))||[FeatureName,Val]<-Tockenized_List],%TODO: Segway scaling used on Val
 	FeatureVector.	
+
+ccbench(Exoself_PId,sense)->
+	[FileName|_]=case get(Exoself_PId) of
+		undefined ->
+			FunctionName = "ccbench",
+			Unique_Extension = integer_to_list(round(genotype:generate_UniqueId() * math:pow(10,25))),
+			List = os:cmd("ls llvm_Data/"++FunctionName++"/src/*.c"),
+			%List_bzlib = os:cmd("ls llvm_Data/"++FunctionName++"/src/bzlib/*.c"),
+			Reference_FileNames = [FileName ||[FileName,Extension]<-data_extractor:list_to_dvals([46,10],List,[])],
+			%io:format("List:~p~n",[Reference_FileNames]),
+			Personal_FileNames = [Reference_FileName++Unique_Extension || Reference_FileName<-Reference_FileNames] ++ ["llvm_Data/ccbench/src/test_almabench"++Unique_Extension],
+			PhaseIndex=1,
+			put(Exoself_PId,{Personal_FileNames,Personal_FileNames,PhaseIndex,Unique_Extension}),
+			Result_CC = os:cmd("clang++ -emit-llvm -o ccbench/test_almabench"++Unique_Extension++".bc -c ccbench/src/test_almabench.cc"),
+			Result = [os:cmd("clang -emit-llvm -O0 -c "++FN++".c -o "++FN++Unique_Extension++".bc") || FN <- Reference_FileNames],
+			%io:format("Result:~p~n",[Result]),
+			Personal_FileNames;
+		{Remaining_File_Names,_All_Files,PhaseIndex,Unique_Extension} ->
+			Remaining_File_Names
+	end,
+	%FeatureVector = get_FileFeatures(FileName),
+	FeatureVector = [Val/30||Val<-lists:seq(1,30)],
+	[1/PhaseIndex|FeatureVector];
+ccbench(Exoself_PId,{act,done})->
+	FunctionName = "ccbench",
+	{_,All_Files,PhaseIndex,Unique_Extension} = get(Exoself_PId),
+%	os:cmd("clang -o "++"llvm_Data/"++FunctionName++"/"++FunctionName++"/src/"++FunctionName++Unique_Extension++" "++lists:flatten([FN++".bc "||FN<-All_Files])++" -lm"),
+	%Result1=[os:cmd("llc-3.4 "++FN++".bc") || FN<-All_Files],
+	Result2=os:cmd("clang++ " ++ "-o llvm_Data/"++FunctionName++"/src/"++FunctionName++Unique_Extension++" "++lists:flatten([FN++".bc "||FN<-All_Files])++" -lm"),%clang++ -o ccbench *.bc bzlib/*.bc -lm
+	Result3=[file:delete(FN++".bc") || FN <- All_Files],
+	%Result4=[file:delete(FN++".s") || FN <- All_Files],
+	StartTime = now(),
+	Result = os:cmd("time llvm_Data/ccbench/src/ccbench"++Unique_Extension++" > /dev/null"),
+	%clang -o ExedcutableFileNameIWant ALL_BCs -lm
+	EndTime = now(),%
 	
+	RunTime = case time_dif(StartTime,EndTime) < 0.10 of
+		true ->
+			io:format("Result:~p~n~n~n~p~n~n~n~p~n~n~n~p~n~n~n~p~n",[Result1,Result2,Result3,Result4,Result]),
+			10;
+		false ->
+			%[[_,_,_,User,_,Sys],_]=data_extractor:list_to_dvals([58,32,32,$s,58,$e],Result,[]),
+			[[User,_,System,_,Wall],_]=data_extractor:list_to_dvals([$u,32, $s, $:, $e],Result,[]),%[58,32,32,$s,58,$e]
+			AltRunTime=User+Sys
+			%time_dif(StartTime,EndTime)
+	end,
+	
+	file:delete("llvm_Data/"++FunctionName++"/"++FunctionName++"/src/"++FunctionName++Unique_Extension),
+%	RunTime = time_dif(StartTime,EndTime),
+	io:format("What:~p~n",[{Result,RunTime}]),
+	%io:format("Result:~p User:~p Sys:~p~n",[Result,User,Sys]),
+	%AltRunTime=User+Sys,
+	erase(Exoself_PId),
+%	io:format("Results:~p~n",[{Result1,Result2,Result3,Result4,RunTime}]),
+	{[1/RunTime],1};
+ccbench(Exoself_PId,{act,Optimization})->
+	FunctionName = "ccbench",
+	case get(Exoself_PId) of
+		{All_Files,All_Files,51,Unique_Extension}->
+			bzip2(Exoself_PId,{act,done});
+		{[FileName],All_Files,PhaseIndex,Unique_Extension}->
+			put(Exoself_PId,{All_Files,All_Files,PhaseIndex+1,Unique_Extension}),
+			Result = os:cmd("opt-3.4 -"++Optimization++" -o "++FileName++".bc"++" "++FileName++".bc"),
+			%io:format("Result:~p~n",[Result]),
+			{[0],0};
+		{[FileName|Remaining_File_Names],All_Files,PhaseIndex,Unique_Extension}->
+			put(Exoself_PId,{Remaining_File_Names,All_Files,PhaseIndex,Unique_Extension}),
+			Result = os:cmd("opt-3.4 -"++Optimization++" -o "++FileName++".bc"++" "++FileName++".bc"),
+%			io:format("Result:~p~n",[Result]),
+			{[0],0};
+		unefined ->
+			exit("parser Actuator files not defined!~n")
+	end.
+
 time_dif(StartTime,EndTime)->
 	{StartA,StartS,StartMS} = StartTime,
 	{EndA,EndS,EndMS} = EndTime,

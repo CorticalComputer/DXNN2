@@ -147,18 +147,18 @@ loop(S,ExoSelf_PId,[SI_PId|SI_PIds],[MI_PId|MI_PIds],SIAcc,MIAcc)->
 			loop(S,ExoSelf_PId,SI_PIds,[MI_PId|MI_PIds],[{SI_PId,Input}|SIAcc],MIAcc);
 		{MI_PId,forward,Input}->
 			loop(S,ExoSelf_PId,[SI_PId|SI_PIds],MI_PIds,SIAcc,[{MI_PId,Input}|MIAcc]);
-		{O_PId,backprop,ErrorSignal}->
-			SI_PIdPs = S#state.si_pidps_current,
-			U_SI_PIdPs=case S#state.af of
-				{circuit,_InitSpec}->
-					circuit:BP_Type(SI_PIdPs,ErrorSignal);
-					{U_Layers2,_ErrorList} = layers_backprop(lists:reverse(U_Layers1),OutputError_List,[]),
-					C#circuit{layers=U_Layers2,err_acc=U_ErrAcc}
-				_ ->
-					backprop(SI_PIds,ErrorSignal)
-			end,
-			U_S = S#state{si_pidps_current=U_SI_PIdPs},
-			loop(U_S,ExoSelf_PId,[SI_PId|SI_PIds],[MI_PId|MI_PIds],SIAcc,MIAcc);
+%		{O_PId,backprop,ErrorSignal}->
+%			SI_PIdPs = S#state.si_pidps_current,
+%			U_SI_PIdPs=case S#state.af of
+%				{circuit,_InitSpec}->
+%					%circuit:BP_Type(SI_PIdPs,ErrorSignal);
+%					{U_Layers2,_ErrorList} = layers_backprop(lists:reverse(U_Layers1),OutputError_List,[]),
+%					C#circuit{layers=U_Layers2,err_acc=U_ErrAcc}
+%				_ ->
+%					backprop(SI_PIds,ErrorSignal)
+%			end,
+%			U_S = S#state{si_pidps_current=U_SI_PIdPs},
+%			loop(U_S,ExoSelf_PId,[SI_PId|SI_PIds],[MI_PId|MI_PIds],SIAcc,MIAcc);
 		{ExoSelf_PId,weight_backup}->
 			U_S=case S#state.heredity_type of
 				darwinian ->

@@ -37,7 +37,13 @@ prep(ExoSelf_PId) ->
 loop(Id,ExoSelf_PId,Cx_PId,Scape,SensorName,VL,Parameters,Fanout_PIds)->
 	receive
 		{Cx_PId,sync}->
-			SensoryVector = sensor:SensorName(ExoSelf_PId,VL,Parameters,Scape),
+		   % io:format("SensorName:~p~n",[SensorName]),
+			SensoryVector = case SensorName of
+			    {M,F} ->
+			        M:F(ExoSelf_PId,VL,Parameters,Scape);
+			    _ ->
+			        sensor:SensorName(ExoSelf_PId,VL,Parameters,Scape)
+			end,
 			%advanced_fanout(PId,SensoryVector,Fanout_PIdPs)
 			[Pid ! {self(),forward,SensoryVector} || Pid <- Fanout_PIds],
 			loop(Id,ExoSelf_PId,Cx_PId,Scape,SensorName,VL,Parameters,Fanout_PIds);
