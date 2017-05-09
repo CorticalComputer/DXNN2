@@ -75,9 +75,9 @@ hebbian_w(_NeuralParameters,IAcc,Input_PIdPs,Output)->
 		lists:reverse([{bias,WPs}|Acc]).
 %hebbian_w/4 function operates on each Input_PIdP, calling the hebbian_w1/4 function which processes each of the complementary Is and WPs lists, producing the Updated_WPs list in return, with the updated/adapted weights based on the hebbian_w learning rule. 
 
-	hebbrule_w([I|Is],[{W,[H]}|WPs],Output,Acc)->
+	hebbrule_w([I|Is],[{W,DW,LP,[H]}|WPs],[Output],Acc)->
 		Updated_W = functions:saturation(W + H*I*Output,?SAT_LIMIT),
-		hebbrule_w(Is,WPs,Output,[{Updated_W,[H]}|Acc]);
+		hebbrule_w(Is,WPs,[Output],[{Updated_W,DW,LP,[H]}|Acc]);
 	hebbrule_w([],[],_Output,Acc)->
 		lists:reverse(Acc).
 %hebbrule_w/4 applies the hebbian learning rule to each weight, using the input value I, the neuron's calculated output Output, and its own distinct learning parameter H associated with each synaptic weight.
@@ -109,9 +109,9 @@ hebbian([_M,H],IAcc,Input_PIdPs,Output)->
 		lists:reverse([{bias,WPs}|Acc]).
 %hebbian/4 function operates on each Input_PIdP, calling the hebbian/5 function which processes each of the complementary Is and WPs lists, producing the Updated_WPs list in return, with the updated/adapted weights based on the standard hebbian learning rule, using the neuron's single learning parameter H. 
 
-	hebbrule(H,[I|Is],[{W,[]}|WPs],Output,Acc)->
+	hebbrule(H,[I|Is],[{W,DW,LP,[]}|WPs],[Output],Acc)->
 		Updated_W = functions:saturation(W + H*I*Output,?SAT_LIMIT),
-		hebbrule(H,Is,WPs,Output,[{Updated_W,[]}|Acc]);
+		hebbrule(H,Is,WPs,[Output],[{Updated_W,DW,LP,[]}|Acc]);
 	hebbrule(_H,[],[],_Output,Acc)->
 		lists:reverse(Acc).
 %hebbrule/5 applies the hebbian learning rule to each weight, using the input value I, the neuron's calculated output Output, and the neuron's leraning parameter H.
@@ -139,9 +139,9 @@ ojas_w1([],[{bias,WPs}],_Output,Acc)->
 	lists:reverse([{bias,WPs}|Acc]).
 %ojas_w/4 function operates on each Input_PIdP, calling the ojas_rule_w/4 function which processes each of the complementary Is and WPs lists, producing the Updated_WPs list in return, with the updated/adapted weights based on the oja's learning rule, using each synaptic weight's distinct learning parameter. 
 
-	ojas_rule_w([I|Is],[{W,[H]}|WPs],Output,Acc)->
+	ojas_rule_w([I|Is],[{W,DW,LP,[H]}|WPs],[Output],Acc)->
 		Updated_W = functions:saturation(W + H*Output*(I - Output*W),?SAT_LIMIT),
-		ojas_rule_w(Is,WPs,Output,[{Updated_W,[H]}|Acc]);
+		ojas_rule_w(Is,WPs,[Output],[{Updated_W,DW,LP,[H]}|Acc]);
 	ojas_rule_w([],[],_Output,Acc)->
 		lists:reverse(Acc).
 %ojas_weights/4 applies the ojas learning rule to each weight, using the input value I, the neuron's calculated output Output, and each weight's learning parameter H.
@@ -173,10 +173,10 @@ ojas(_H,[],[{bias,WPs}],_Output,Acc)->
 	lists:reverse([{bias,WPs}|Acc]).
 %ojas/5 function operates on each Input_PIdP, calling the ojas_rule/5 function which processes each of the complementary Is and WPs lists, producing the Updated_WPs list in return, with the updated/adapted weights based on the standard oja's learning rule. 
 
-	ojas_rule(H,[I|Is],[{W,[]}|WPs],Output,Acc)->
+	ojas_rule(H,[I|Is],[{W,DW,LP,[]}|WPs],[Output],Acc)->
 		%io:format("ojas:~p~n",[{H,I,W,Output}]),
 		Updated_W = functions:saturation(W + H*Output*(I - Output*W),?SAT_LIMIT),
-		ojas_rule(H,Is,WPs,Output,[{Updated_W,[]}|Acc]);
+		ojas_rule(H,Is,WPs,[Output],[{Updated_W,DW,LP,[]}|Acc]);
 	ojas_rule(_H,[],[],_Output,Acc)->
 		lists:reverse(Acc).
 %ojas_rule/5 updates every synaptic weight using Oja's learning rule.
@@ -211,7 +211,7 @@ self_modulationV1([_M,A,B,C,D],IAcc,Input_PIdPs,Output)->
 	dot_productV1([],[],Acc)->
 		Acc.
 	
-		dotV1([I|Input],[{_W,[H_W]}|Weights],Acc) ->
+		dotV1([I|Input],[{_W,DW,LP,[H_W]}|Weights],Acc) ->
 			dotV1(Input,Weights,I*H_W+Acc);
 		dotV1([],[],Acc)->
 			Acc.
@@ -226,10 +226,10 @@ neuromodulation([H,A,B,C,D],[],[{bias,WPs}],Output,Acc)->
 	Updated_WPs = genheb_rule([H,A,B,C,D],[1],WPs,Output,[]),
 	lists:reverse([{bias,Updated_WPs}|Acc]).
 
-	genheb_rule([H,A,B,C,D],[I|Is],[{W,Ps}|WPs],Output,Acc)->
+	genheb_rule([H,A,B,C,D],[I|Is],[{W,DW,LP,Ps}|WPs],[Output],Acc)->
 		%io:format("GenHeb[H,A,B,C,D]:~p~n",[[H,A,B,C,D]]),
 		Updated_W = functions:saturation(W + H*(A*I*Output + B*I + C*Output + D),?SAT_LIMIT),
-		genheb_rule([H,A,B,C,D],Is,WPs,Output,[{Updated_W,Ps}|Acc]);
+		genheb_rule([H,A,B,C,D],Is,WPs,[Output],[{Updated_W,DW,LP,Ps}|Acc]);
 	genheb_rule(_NeuralLearningParameters,[],[],_Output,Acc)->
 		lists:reverse(Acc).
 %Updated_W(i)= W(i) + H*(A*I(i)*Output + B*I(i) + C*Output + D)
@@ -310,7 +310,7 @@ self_modulationV4([_M,B,C,D],IAcc,Input_PIdPs,Output)->
 	dot_productV4([],[],AccH,AccA)->
 		{AccH,AccA}.
 	
-		dotV4([I|Input],[{_W,[H_W,A_W]}|Weights],AccH,AccA) ->
+		dotV4([I|Input],[{_W,DW,LP,[H_W,A_W]}|Weights],AccH,AccA) ->
 			dotV4(Input,Weights,I*H_W+AccH,I*A_W+AccA);
 		dotV4([],[],AccH,AccA)->
 			{AccH,AccA}.
@@ -375,7 +375,7 @@ self_modulationV6([_M],IAcc,Input_PIdPs,Output)->
 	dot_productV6([],[],AccH,AccA,AccB,AccC,AccD)->
 		{AccH,AccA,AccB,AccC,AccD}.
 	
-		dotV6([I|Input],[{_W,[H_W,A_W,B_W,C_W,D_W]}|Weights],AccH,AccA,AccB,AccC,AccD) ->
+		dotV6([I|Input],[{_W,_DW,_LP,[H_W,A_W,B_W,C_W,D_W]}|Weights],AccH,AccA,AccB,AccC,AccD) ->
 			dotV6(Input,Weights,I*H_W+AccH,I*A_W+AccA,I*B_W+AccB,I*C_W+AccC,I*D_W+AccD);
 		dotV6([],[],AccH,AccA,AccB,AccC,AccD)->
 			{AccH,AccA,AccB,AccC,AccD}.
