@@ -26,17 +26,27 @@ generate_id() ->
 	{MegaSeconds,Seconds,MicroSeconds} = now(), 
 	1/(MegaSeconds*1000000 + Seconds + MicroSeconds/1000000).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Get Init Standard Actuators/Sensors %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+get_InitSensors({M,F})->
+	Sensors = M:F(sensors),
+	[lists:nth(1,Sensors)];
 get_InitSensors(Morphology)->
 	Sensors = morphology:Morphology(sensors),
 	[lists:nth(1,Sensors)].
 
+get_InitActuators({M,F})->
+	Actuators = M:F(actuators),
+	[lists:nth(1,Actuators)];
 get_InitActuators(Morphology)->
 	Actuators = morphology:Morphology(actuators),
 	[lists:nth(1,Actuators)].
 
+get_Sensors({M,F})->
+    M:F(sensors);
 get_Sensors(Morphology)->
 	morphology:Morphology(sensors).
 
+get_Actuators({M,F})->
+    M:F(actuators);
 get_Actuators(Morphology)->
 	morphology:Morphology(actuators).
 	
