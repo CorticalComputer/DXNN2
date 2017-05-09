@@ -110,6 +110,20 @@ start(Id,Notes)->
 	},
 	genotype:write(E),
 	register(benchmarker,spawn(benchmarker,prep,[E])).
+start(Id, #pmp{} = Pmp, #constraint{} = Constraints, Runs) when is_integer(Runs) and is_atom(Id)->
+	E=#experiment{
+        id = Id,
+        backup_flag = true,
+        pm_parameters=Pmp,
+        init_constraints=Constraints,
+        progress_flag=in_progress,
+        run_index=1,
+        tot_runs=Runs,
+        started={date(),time()},
+        interruptions=[]
+    },
+    genotype:write(E),
+    register(benchmarker,spawn(benchmarker,prep,[E])).
 
 continue(Id)->
 	case genotype:dirty_read({experiment,Id}) of
