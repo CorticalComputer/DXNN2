@@ -1,0 +1,16 @@
+{application, dxnn2,
+[
+    {description, "Topology and Parameter Evolving Universal Learning Network platform DXNN MK2"},
+    {vsn, "2.0.0"},
+    {modules, []},
+    {registered, []},
+    {applications, [
+        kernel,
+        stdlib
+    ]},
+    {env, []},
+    {files, [
+      "src",
+      "rebar.config", "README.txt", "LICENSE.txt"
+    ]}
+]}.

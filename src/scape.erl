@@ -27,7 +27,7 @@ gen(ExoSelf_PId,Node)->
 
 prep(ExoSelf_PId) ->
 	receive 
-		{ExoSelf_PId,{M,F} ->
+		{ExoSelf_PId,{M,F}} ->
 			M:F(ExoSelf_PId);
 		{ExoSelf_PId,Name} ->
 			scape:Name(ExoSelf_PId)
