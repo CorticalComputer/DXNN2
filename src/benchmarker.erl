@@ -110,12 +110,14 @@ start(Id,Notes)->
 	},
 	genotype:write(E),
 	register(benchmarker,spawn(benchmarker,prep,[E])).
-start(Id, #pmp{} = Pmp, #constraint{} = Constraints, Runs) when is_integer(Runs) and is_atom(Id)->
+start(Id, Pmp, Constraints, Runs) when is_integer(Runs) and is_atom(Id)->
+	Pmp_ = map2rec:convert(pmp, Pmp),
+	Con_ = lists:foldl(fun(C,Acc)-> [map2rec:convert(constraint, C)|Acc] end, [], Constraints),
 	E=#experiment{
         id = Id,
         backup_flag = true,
-        pm_parameters=Pmp,
-        init_constraints=Constraints,
+        pm_parameters=Pmp_,
+        init_constraints=Constraints_,
         progress_flag=in_progress,
         run_index=1,
         tot_runs=Runs,

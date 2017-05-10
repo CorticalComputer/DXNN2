@@ -27,29 +27,43 @@ generate_id() ->
 	1/(MegaSeconds*1000000 + Seconds + MicroSeconds/1000000).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Get Init Standard Actuators/Sensors %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 get_InitSensors({M,F})->
-	Sensors = M:F(sensors),
+	Sensors = wrap_Sensors(M:F(sensors)),
 	[lists:nth(1,Sensors)];
 get_InitSensors(Morphology)->
-	Sensors = morphology:Morphology(sensors),
+	Sensors = wrap_Sensors(morphology:Morphology(sensors)),
 	[lists:nth(1,Sensors)].
 
 get_InitActuators({M,F})->
-	Actuators = M:F(actuators),
+	Actuators = wrap_Actuators(M:F(actuators)),
 	[lists:nth(1,Actuators)];
 get_InitActuators(Morphology)->
-	Actuators = morphology:Morphology(actuators),
+	Actuators = wrap_Actuators(morphology:Morphology(actuators)),
 	[lists:nth(1,Actuators)].
 
 get_Sensors({M,F})->
-    M:F(sensors);
+    wrap_Sensors(M:F(sensors));
 get_Sensors(Morphology)->
-	morphology:Morphology(sensors).
+	wrap_Sensors(morphology:Morphology(sensors)).
 
 get_Actuators({M,F})->
-    M:F(actuators);
+    wrap_Actuators(M:F(actuators));
 get_Actuators(Morphology)->
-	morphology:Morphology(actuators).
+	wrap_Actuators(morphology:Morphology(actuators)).
 	
+wrap_Sensors([],Acc)->
+	Acc;
+wrap_Sensors([S|Ss],_) when is_record(snesor,S)->
+	[S|Ss];
+wrap_Sensors([S|Ss],Acc) when is_map(S)->
+	wrap_Sensors(Ss,[map2rec(sensor, S)|Acc]).
+
+wrap_Actuators([],Acc)->
+	Acc;
+wrap_ACtuators([A|As], _) when is_record(actuators, A)->
+	[A|As];
+wrap_Actuators([A|As], Acc) when is_map(A)->
+	wrap_Actuators(As, [map2rec(actuator,A)|Acc]).
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Get Init Substrate_CPPs/Substrate_CEPs %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 get_InitSubstrateCPPs(Dimensions,Plasticity)->
 	Substrate_CPPs = get_SubstrateCPPs(Dimensions,Plasticity),
