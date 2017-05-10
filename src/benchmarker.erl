@@ -117,7 +117,7 @@ start(Id, Pmp, Constraints, Runs) when is_integer(Runs) and is_atom(Id)->
         id = Id,
         backup_flag = true,
         pm_parameters=Pmp_,
-        init_constraints=Constraints_,
+        init_constraints=Con_,
         progress_flag=in_progress,
         run_index=1,
         tot_runs=Runs,
