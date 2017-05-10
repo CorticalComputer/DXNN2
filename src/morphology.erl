@@ -50,19 +50,23 @@ get_Actuators({M,F})->
 get_Actuators(Morphology)->
 	wrap_Actuators(morphology:Morphology(actuators)).
 	
+wrap_Sensors(S)->
+	wrap_Sensors(S,[]).
 wrap_Sensors([],Acc)->
 	Acc;
-wrap_Sensors([S|Ss],_) when is_record(snesor,S)->
+wrap_Sensors([S|Ss],_) when is_record(S,sensor)->
 	[S|Ss];
 wrap_Sensors([S|Ss],Acc) when is_map(S)->
-	wrap_Sensors(Ss,[map2rec(sensor, S)|Acc]).
+	wrap_Sensors(Ss,[map2rec:convert(sensor, S)|Acc]).
 
+wrap_Actuators(A)->
+	wrap_Actuators(A,[]).
 wrap_Actuators([],Acc)->
 	Acc;
-wrap_ACtuators([A|As], _) when is_record(actuators, A)->
+wrap_Actuators([A|As], _) when is_record(A,actuator)->
 	[A|As];
 wrap_Actuators([A|As], Acc) when is_map(A)->
-	wrap_Actuators(As, [map2rec(actuator,A)|Acc]).
+	wrap_Actuators(As, [map2rec:convert(actuator,A)|Acc]).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Get Init Substrate_CPPs/Substrate_CEPs %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 get_InitSubstrateCPPs(Dimensions,Plasticity)->
