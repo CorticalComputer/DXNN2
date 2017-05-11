@@ -103,6 +103,8 @@ convert(sensor,Map)->
 			R#sensor{generation = Val};
 		({format, Val}, R) ->
 			R#sensor{format = Val};
+		({parameters, Val}, R) ->
+			R#sensor{parameters = Val};
 		({gt_parameters, Val}, R) ->
 			R#sensor{gt_parameters = Val};
 		({phys_rep, Val}, R) ->
@@ -138,6 +140,8 @@ convert(actuator,Map)->
 			R#actuator{generation = Val};
 		({format, Val}, R) ->
 			R#actuator{format = Val};
+		({parameters, Val}, R) ->
+			R#sensor{parameters = Val};
 		({gt_parameters, Val}, R) ->
 			R#actuator{gt_parameters = Val};
 		({phys_rep, Val}, R) ->
