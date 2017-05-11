@@ -141,7 +141,7 @@ convert(actuator,Map)->
 		({format, Val}, R) ->
 			R#actuator{format = Val};
 		({parameters, Val}, R) ->
-			R#sensor{parameters = Val};
+			R#actuator{parameters = Val};
 		({gt_parameters, Val}, R) ->
 			R#actuator{gt_parameters = Val};
 		({phys_rep, Val}, R) ->
