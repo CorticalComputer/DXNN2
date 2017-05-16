@@ -1,7 +1,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % This source code and work is provided and developed by Gene I. Sher & DXNN Research Group WWW.DXNNResearch.COM
 %
-%The original release of this source code and the DXNN MK2 system was introduced and explained in my book: Handbook of Neuroevolution Through Erlang. Springer 2012, print ISBN: 978-1-4614-4462-6 ebook ISBN: 978-1-4614-4463-6. 
+%The original release of this source code and the DXNN MK2 system was introduced and explained in my book: Handbook of Neuroevolution Through Erlang. Springer 2012, print ISBN: 978-1-4614-4462-6 ebook ISBN: 978-1-4614-4463-6.
 %
 %Copyright (C) 2009 by Gene Sher, DXNN Research Group CorticalComputer@gmail.com
 %
@@ -44,27 +44,27 @@
 		tuning_selection_fs=[dynamic_random],
 		mutation_operators= [
 			%{mutate_weights,10000},
-			{add_bias,10}, 
-			%{remove_bias,1}, 
-	%		{mutate_af,1}, 
-			{add_outlink,40}, 
-			{add_inlink,40}, 
-			{add_neuron,40}, 
+			{add_bias,10},
+			%{remove_bias,1},
+	%		{mutate_af,1},
+			{add_outlink,40},
+			{add_inlink,40},
+			{add_neuron,40},
 			{outsplice,40},
 			%{insplice,40},
 			{add_sensorlink,1},
 			%{add_actuatorlink,1},
-			{add_sensor,1}, 
+			{add_sensor,1},
 			{add_actuator,1},
 	%		{mutate_plasticity_parameters,1},
 			{add_cpp,1},
 			{add_cep,1}
 		]
-	} 
-	|| 
+	}
+	||
 		Morphology<-[xorAndXor],
 		CA<-[recurrent]
-	
+
 ]).
 %neural_types=[{circuit,{static,[{tanh,2,static},{tanh,1,static}]}}] %[{circuit,{static|dynamic,[{NeuronType::tanh|sin|rbf|gaussian|gabor_2d, LayerSize::integer(), static|dynamic}]}} | standard]
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -74,7 +74,7 @@ print_experiment(Experiment_Id)->
 get_ekeys()->
 	io:format("--- Currently Stored Experiments ---~n"),
 	get_ekeys(mnesia:dirty_first(experiment)).
-	
+
 	get_ekeys('$end_of_table')->
 		ok;
 	get_ekeys(Key)->
@@ -153,7 +153,7 @@ prep(E)->
 	Population_Id = PMP#pmp.population_id,
 	population_monitor:prep_PopState(U_PMP,Constraints),
 	loop(E#experiment{pm_parameters=U_PMP},Population_Id).
-	
+
 loop(E,P_Id)->
 	receive
 		{P_Id,completed,Trace}->
@@ -200,7 +200,7 @@ loop(E,P_Id)->
 		terminate ->
 			ok
 	end.
-	
+
 	receive_TestAcks([{PId,Id}|PIdPs],Acc)->
 		receive
 			{PId,test_complete,Id,Fitness,Cycles,Time} ->
@@ -208,14 +208,14 @@ loop(E,P_Id)->
 		end;
 	receive_TestAcks([],Acc)->
 		Acc.
-		
-	
+
+
 	get_best(T)->
 		Stats = T#trace.stats,
 		GenTest_Champions=[{Stat#stat.validation_fitness,Stat#stat.test_fitness} || [Stat] <- Stats],
 		[Best|_]=lists:reverse(lists:sort(GenTest_Champions)),
 		Best.
-	
+
 %	get_avg([{Id,FitnessP}|IdPs],Acc)->
 %		get_avg(IdPs,[FitnessP|Acc]);
 %	get_avg([],Acc)->
@@ -224,7 +224,7 @@ loop(E,P_Id)->
 		get_avg(IdPs,[FitnessP|Acc]);
 	get_avg([],Acc)->
 		get_avg(Acc,[],[],[]).
-		
+
 		get_avg([Fitness|FitnessPs],Acc1,Acc2,Acc3)->
 			%io:format("Fitness:~p~n",[{Fitness,FitnessPs}]),
 			case Fitness of
@@ -239,19 +239,19 @@ loop(E,P_Id)->
 			[io:format("~p~n",[{functions:avg(Score),functions:std(Score),lists:max(Score),lists:min(Score)}]) || Score <- lists:reverse(Acc3)];
 		get_avg([],Acc1,Acc2,Acc3)->
 			%io:format("Acc1:~p~n",[Acc1]),
-			get_avg(Acc2,[],[],[Acc1|Acc3]).		
-	
+			get_avg(Acc2,[],[],[Acc1|Acc3]).
+
 
 report(Experiment_Id,FileName)->
 	report(Experiment_Id,FileName,undefind).
 report(Experiment_Id,FileName,EvalLimit)->
 	E = genotype:dirty_read({experiment,Experiment_Id}),
-	
+
 	{ok, EFile} = file:open(?DIR++FileName++"_Experiment", write),
 	io:format(EFile, "~p",[E]),
 	file:close(EFile),
 	io:format("******** Experiment written to file:~p~n",[?DIR++FileName++"_Experiment"]),
-	
+
 	Traces = E#experiment.trace_acc,
 	{ok, File} = file:open(?DIR++FileName++"_Trace_Acc", write),
 	Evaluations_Stats = get_evaluations(Experiment_Id,undefined,EvalLimit),
@@ -259,7 +259,7 @@ report(Experiment_Id,FileName,EvalLimit)->
 	lists:foreach(fun(X) -> io:format(File, "~p.~n",[X]) end, Traces),
 	file:close(File),
 	io:format("******** Traces_Acc written to file:~p~n",[?DIR++FileName++"_Trace_Acc"]),
-	
+
 	Graphs = prepare_Graphs(Traces),
 	write_Graphs(Graphs,FileName++"_Graphs"),
 	Eval_List = [T#trace.tot_evaluations||T<-Traces],
@@ -283,7 +283,7 @@ prepare_Graphs(Traces)->
 	Morphology_Graphs = [prep_Traces(Traces,Morphology,[])|| Morphology <- Morphologies],
 	[io:format("Graph:~p~n",[Graph])|| Graph<-Morphology_Graphs],
 	Morphology_Graphs.
-		
+
 	prep_Traces([T|Traces],Morphology,Acc)->
 		Morphology_Trace = lists:flatten([[S||S<-Stats,S#stat.morphology == Morphology]||Stats<-T#trace.stats]),
 		prep_Traces(Traces,Morphology,[Morphology_Trace|Acc]);
@@ -403,43 +403,50 @@ prepare_Graphs(Traces)->
 write_Graphs([G|Graphs],Graph_Postfix)->
 	Morphology = G#graph.morphology,
 	U_G = G#graph{evaluation_Index=[500*Index || Index <-lists:seq(1,length(G#graph.avg_fitness))]},
-	{ok, File} = file:open(?DIR++"graph_"++atom_to_list(Morphology)++"_"++Graph_Postfix, write),
+	File = case Morphology of
+		{M,F}->
+			{ok, File} = file:open(?DIR++"graph_"++atom_to_list(M)++"_"++atom_to_list(F)++"_"++Graph_Postfix, write),
+			File;
+		_->
+			{ok, File} = file:open(?DIR++"graph_"++atom_to_list(Morphology)++"_"++Graph_Postfix, write),
+			File
+	end,
 
 	io:format(File,"#Avg Fitness Vs Evaluations, Morphology:~p",[Morphology]),
 	print_MultiObjectiveFitness(File,U_G#graph.evaluation_Index,U_G#graph.avg_fitness,U_G#graph.fitness_std),
-	
+
 	io:format(File,"~n~n~n#Avg Neurons Vs Evaluations, Morphology:~p~n",[Morphology]),
 	lists:foreach(fun({X,Y,Std}) -> io:format(File, "~p ~p ~p~n",[X,Y,Std]) end, lists:zip3(U_G#graph.evaluation_Index,U_G#graph.avg_neurons,U_G#graph.neurons_std)),
-	
+
 	io:format(File,"~n~n#Avg Diversity Vs Evaluations, Morphology:~p~n",[Morphology]),
 	lists:foreach(fun({X,Y,Std}) -> io:format(File, "~p ~p ~p~n",[X,Y,Std]) end, lists:zip3(U_G#graph.evaluation_Index,U_G#graph.avg_diversity,U_G#graph.diversity_std)),
-	
+
 	io:format(File,"~n~n# Max Fitness Vs Evaluations, Morphology:~p",[Morphology]),
 	print_MultiObjectiveFitness(File,U_G#graph.evaluation_Index,U_G#graph.max_fitness),
 
 	io:format(File,"~n~n~n#Avg. Max Fitness Vs Evaluations, Morphology:~p",[Morphology]),
 	print_MultiObjectiveFitness(File,U_G#graph.evaluation_Index,U_G#graph.maxavg_fitness),
-	
+
 	io:format(File,"~n~n~n#Avg. Min Fitness Vs Evaluations, Morphology:~p",[Morphology]),
 	print_MultiObjectiveFitness(File,U_G#graph.evaluation_Index,U_G#graph.min_fitness),
-	
+
 	io:format(File,"~n~n~n#Specie-Population Turnover Vs Evaluations, Morphology:~p~n",[Morphology]),
 	lists:foreach(fun({X,Y}) -> io:format(File, "~p ~p~n",[X,Y]) end, lists:zip(U_G#graph.evaluation_Index,U_G#graph.evaluations)),
-	
+
 	io:format(File,"~n~n#Validation Avg Fitness Vs Evaluations, Morphology:~p",[Morphology]),
 	print_MultiObjectiveFitness(File,U_G#graph.evaluation_Index,U_G#graph.validation_fitness,U_G#graph.validation_fitness_std),
-	
+
 	io:format(File,"~n~n~n#Validation Max Fitness Vs Evaluations, Morphology:~p",[Morphology]),
 	print_MultiObjectiveFitness(File,U_G#graph.evaluation_Index,U_G#graph.validationmax_fitness),
-	
+
 	io:format(File,"~n~n~n#Validation Min Fitness Vs Evaluations, Morphology:~p",[Morphology]),
 	print_MultiObjectiveFitness(File,U_G#graph.evaluation_Index,U_G#graph.validationmin_fitness),
-	
+
 	file:close(File),
 	write_Graphs(Graphs,Graph_Postfix);
 write_Graphs([],_Graph_Postfix)->
 	ok.
-	
+
 	print_MultiObjectiveFitness(File,[I|Index],[F|Fitness],[Std|StandardDiviation])->
 		case (F==[]) or (Std==[]) of
 			true ->
@@ -451,13 +458,13 @@ write_Graphs([],_Graph_Postfix)->
 		print_MultiObjectiveFitness(File,Index,Fitness,StandardDiviation);
 	print_MultiObjectiveFitness(_File,[],[],[])->
 		ok.
-		
+
 		print_FitnessAndStd(File,[FE|FitnessElements],[SE|StdElements])->
 			io:format(File," ~p ~p",[FE,SE]),
 			print_FitnessAndStd(File,FitnessElements,StdElements);
 		print_FitnessAndStd(_File,[],[])->
 			ok.
-		
+
 	print_MultiObjectiveFitness(File,[I|Index],[F|Fitness])->
 		case F == [] of
 			true ->
@@ -469,12 +476,12 @@ write_Graphs([],_Graph_Postfix)->
 		print_MultiObjectiveFitness(File,Index,Fitness);
 	print_MultiObjectiveFitness(_File,[],[])->
 		ok.
-	
+
 unconsult(List)->
 	{ok, File} = file:open(?DIR++"alife_benchmark", write),
 	lists:foreach(fun(X) -> io:format(File, "~p~n",[X]) end, List),
 	file:close(File).
-	
+
 gen_plot(Lists)->gen_plot(Lists,[],[],[]).
 
 gen_plot([List|Lists],Acc1,Acc2,Acc3)->
@@ -492,19 +499,19 @@ gen_plot([],Acc1,Acc2,Acc3)->
 		genplot(Lists,[lists:max(L)|Acc]);
 	genplot([],Acc)->
 		print_plot(0,lists:reverse(Acc)).
-		
+
 	print_plot(Index,[Val|List])->
 		io:format("~p  ~p~n",[Index,Val]),
 		print_plot(Index+500,List);
 	print_plot(_Index,[])->
 		void.
-		
+
 trace2graph(TraceFileName)->
 	{ok,Traces} = file:consult(TraceFileName),
 	io:format("Traces:~p~n",[Traces]),
 	Graphs = prepare_Graphs(Traces),
 	write_Graphs(Graphs,"__Graph").
-	
+
 get_evaluations(E_Id)->
 	get_evaluations(E_Id,undefined,undefined).
 get_evaluations(E_Id,FitnessGoal)->
@@ -526,14 +533,14 @@ get_evaluations(E_Id,FitnessGoal,EvalLimit)->
 	end,
 	Std = functions:std(SuccessAcc,Avg,[]),
 	io:format("Success Rate:{~p/~p,~p%} Avg:~p Std:~p~n",[TotSuccess,TotEvoRuns,SuccessRate*100,Avg,Std]).
-		
+
 		analyze_stats([[S]|Stats],FitnessGoal,EvalLimit,Acc)->
 			io:format("S:~p~n",[S]),
 			U_Acc = Acc+S#stat.evaluations,
 			case S#stat.max_fitness of
-				[] ->	
+				[] ->
 					analyze_stats(Stats,FitnessGoal,EvalLimit,U_Acc);
-				[MaxFitness|_]->	
+				[MaxFitness|_]->
 					case MaxFitness >= FitnessGoal of
 						true ->
 							U_Acc;
@@ -554,12 +561,12 @@ get_evaluations(E_Id,FitnessGoal,EvalLimit)->
 				_ ->
 					undefined
 			end.
-			
+
 chg_mrph(Id,NewMorph)->
 	[A] = mnesia:dirty_read({agent,Id}),
 	mnesia:dirty_write((A#agent.constraint)#constraint{morphology=NewMorph}),
 	io:format("Ok: OldMorph:~p NewMorph:~p~n",[(A#agent.constraint)#constraint.morphology,NewMorph]).
-	
+
 vector_gt(V1,V2)->
 	vector_gt(V1,V2,0).
 vector_gt([A|V1],[B|V2],Acc)->
@@ -587,7 +594,7 @@ vector_lt([],[],Acc)->
 	Acc<0;
 vector_lt(_,undefined,_Acc)->
 	false.
-	
+
 vector_eq([A|V1],[B|V2])->
 	case A == B of
 		true ->
